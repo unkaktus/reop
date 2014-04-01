@@ -1,0 +1,20 @@
+
+CC=cc
+CFLAGS=-Wall -I/usr/local/include -O2
+CFLAGS+=-Iother
+CFLAGS+=-Werror
+CFLAGS+=-Wno-pointer-sign -Wno-unused-result
+LDFLAGS=-L/usr/local/lib -lsodium
+
+OBJS=reop.o other/other.o
+
+reop: ${OBJS}
+	${CC} ${OBJS} ${LDFLAGS} -o reop
+
+clean:
+	rm -f ${OBJS} reop
+
+.SUFFIXES: .c .o
+.c.o:
+	${CC} ${CFLAGS} -c $< -o $@
+

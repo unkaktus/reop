@@ -1,0 +1,156 @@
+.\"
+.\"Copyright (c) 2014 Ted Unangst <tedu@tedunangst.com>
+.\"
+.\"Permission to use, copy, modify, and distribute this software for any
+.\"purpose with or without fee is hereby granted, provided that the above
+.\"copyright notice and this permission notice appear in all copies.
+.\"
+.\"THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+.\"WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+.\"MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+.\"ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+.\"WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+.\"ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+.\"OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+.Dd $Mdocdate: March 16 2014 $
+.Dt REOP 1
+.Os
+.Sh NAME
+.Nm reop
+.Nd reasonable expectation of privacy
+.Sh SYNOPSIS
+.Nm reop
+.Fl A
+.Op Fl i Ar ident
+.Fl p Ar pubkey
+.Nm reop
+.Fl D
+.Fl x Ar encfile
+.Nm reop
+.Fl E
+.Op Fl i Ar ident
+.Fl m Ar message
+.Fl p Ar pubkey
+.Fl s Ar seckey
+.Nm reop
+.Fl S
+.Op Fl e
+.Op Fl x Ar sigfile
+.Fl s Ar seckey
+.Fl m Ar message
+.Nm reop
+.Fl V
+.Op Fl eq
+.Op Fl x Ar sigfile
+.Fl p Ar pubkey
+.Fl m Ar message
+.Sh DESCRIPTION
+The
+.Nm
+utility creates and verifies cryptographic signatures.
+A signature verifies the integrity of a
+.Ar message .
+The mode of operation is selected with the following options:
+.Bl -tag -width Dsssigfile
+.It Fl A
+Assymetric one way encryption.
+Encrypt a message using the specified public key and an ephemeral
+secret key.
+.It Fl D
+Decryption, both public key and symmetric.
+.It Fl E
+Encryption, both public key and symmetric.
+When run without a public key, will ask for a password and
+perform symmetric encryption.
+.Pp
+When run with a public key, will encrypt the message so that it can be
+decrypted by the matching secret key.
+Public key encryption also uses a different secret key to authenticate the
+encryptor.
+Note that the same two keys used to encrypt a message can also be used
+to decrypt it; this construct is not strictly one way.
+.It Fl G
+Generate a new key pair.
+.It Fl S
+Sign the specified message file and create a signature.
+.It Fl V
+Verify the message and signature match.
+.El
+.Pp
+The other options are as follows:
+.Bl -tag -width Dsssignature
+.It Fl e
+When signing, create a signed message instead of just a signature.
+.It Fl i Ar ident
+Specify the ident to be created during key generation or
+looked up when using public cryptography.
+.It Fl m Ar message
+When signing, the file containing the message to sign.
+When verifying, the file containing the message to verify.
+When encrypting or decrypting, the plaintext.
+.It Fl n
+Do not ask for a passphrase during key generation.
+Otherwise,
+.Nm
+will prompt the user for a passphrase to protect the secret key.
+.It Fl p Ar pubkey
+Public key produced by
+.Fl G ,
+and used by other commands.
+.It Fl q
+Quiet mode.
+Suppress informational output.
+.It Fl s Ar seckey
+Secret (private) key produced by
+.Fl G ,
+and used by other commands.
+.It Fl x Ar xfile
+The signature file to create or verify.
+The default is
+.Ar message Ns .sig .
+When encrypting, the encrypted file.
+The default is
+.Ar message Ns .enc .
+.El
+.Pp
+The key and data files created by
+.Nm
+have similar format.
+A plain text line of the form ident: is used to match key pairs.
+Most of the actual key data the follows and is base64 encoded.
+.Pp
+The ~/.reop directory is searched for default keys named:
+.Bl -tag -width pubkeyring -compact
+.It seckey
+User's secret key
+.It pubkey
+User's public key
+.It pubkeyring
+User's set trusted of trusted third party keys, searched by ident.
+.El
+.Sh EXIT STATUS
+.Ex -std reop
+It may fail because of one of the following reasons:
+.Pp
+.Bl -bullet -compact
+.It
+Some necessary files do not exist.
+.It
+Entered passphrase is incorrect.
+.It
+The message file was corrupted and its signature does not match.
+.It
+The message file is too large.
+.El
+.Sh EXAMPLES
+Create a new key pair.
+.Dl $ reop -G -p newkey.pub -s newkey.sec
+.Pp
+Create a new key pair, assuming the ~/.reop directory exists:
+.Dl $ reop -G
+.Pp
+Sign a file, specifying a signature name:
+.Dl $ reop -S -s key.sec -m message.txt -x msg.sig
+.Pp
+Verify a signed message, using the default identity:
+.Dl $ reop -V -x generalsorders.sig
