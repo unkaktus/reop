@@ -117,15 +117,17 @@ The key and data files created by
 .Nm
 have similar format.
 A plain text line of the form ident: is used to match key pairs.
-Most of the actual key data the follows and is base64 encoded.
+Most of the actual key data follows and is base64 encoded.
 .Pp
-The ~/.reop directory is searched for default keys named:
+The
+.Pa ~/.reop
+directory is searched for default keys named:
 .Bl -tag -width pubkeyring -compact
-.It seckey
+.It Pa seckey
 User's secret key
-.It pubkey
+.It Pa pubkey
 User's public key
-.It pubkeyring
+.It Pa pubkeyring
 User's set trusted of trusted third party keys, searched by ident.
 .El
 .Sh EXIT STATUS
@@ -146,7 +148,9 @@ The message file is too large.
 Create a new key pair.
 .Dl $ reop -G -p newkey.pub -s newkey.sec
 .Pp
-Create a new key pair, assuming the ~/.reop directory exists:
+Create a new key pair, assuming the
+.Pa ~/.reop
+directory exists:
 .Dl $ reop -G
 .Pp
 Sign a file, specifying a signature name:
