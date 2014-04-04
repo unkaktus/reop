@@ -801,7 +801,7 @@ verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet)
 
 	verifymsg(&pubkey, msg, msglen, &sig, quiet);
 
-	free(msg);
+	free(msgdata);
 
 	return;
 fail:
