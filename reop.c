@@ -212,7 +212,8 @@ symencryptmsg(uint8_t *buf, unsigned long long msglen, uint8_t *box, uint8_t *sy
  * box contains the auth tag data.
  */
 static void
-symdecryptmsg(uint8_t *buf, unsigned long long msglen, const uint8_t *box, uint8_t *symkey)
+symdecryptmsg(uint8_t *buf, unsigned long long msglen, const uint8_t *box,
+    uint8_t *symkey)
 {
 	uint8_t *msg, *cmsg;
 
@@ -237,7 +238,8 @@ symdecryptmsg(uint8_t *buf, unsigned long long msglen, const uint8_t *box, uint8
  * box will be used to hold randomly generated nonce and auth tag data.
  */
 static void
-pubencryptmsg(uint8_t *buf, unsigned long long msglen, uint8_t *box, uint8_t *pubkey, uint8_t *seckey)
+pubencryptmsg(uint8_t *buf, unsigned long long msglen, uint8_t *box,
+    uint8_t *pubkey, uint8_t *seckey)
 {
 	uint8_t *cmsg, *msg;
 
@@ -263,7 +265,8 @@ pubencryptmsg(uint8_t *buf, unsigned long long msglen, uint8_t *box, uint8_t *pu
  * box contains nonce and auth tag data.
  */
 static void
-pubdecryptmsg(uint8_t *buf, unsigned long long msglen, uint8_t *box, uint8_t *pubkey, uint8_t *seckey)
+pubdecryptmsg(uint8_t *buf, unsigned long long msglen, uint8_t *box,
+    uint8_t *pubkey, uint8_t *seckey)
 {
 	uint8_t *msg, *cmsg;
 
@@ -273,8 +276,8 @@ pubdecryptmsg(uint8_t *buf, unsigned long long msglen, uint8_t *box, uint8_t *pu
 	memcpy(cmsg + ENCZEROBYTES, buf, msglen);
 	msg = xmalloc(msglen + ENCZEROBYTES);
 
-	if (crypto_box_curve25519xsalsa20poly1305_open(msg, cmsg, msglen + ENCZEROBYTES,
-	    box, pubkey, seckey) == -1)
+	if (crypto_box_curve25519xsalsa20poly1305_open(msg, cmsg,
+	    msglen + ENCZEROBYTES, box, pubkey, seckey) == -1)
 		errx(1, "decryption failed");
 	xfree(cmsg, msglen + ENCZEROBYTES);
 
@@ -489,13 +492,15 @@ kdf(uint8_t *salt, size_t saltlen, int rounds, int allowstdin, int confirm,
 		errx(1, "please provide a password");
 	if (confirm && !(rppflags & RPP_STDIN)) {
 		char pass2[1024];
-		if (!readpassphrase("confirm passphrase: ", pass2, sizeof(pass2), rppflags))
+		if (!readpassphrase("confirm passphrase: ", pass2,
+		    sizeof(pass2), rppflags))
 			errx(1, "unable to read passphrase");
 		if (strcmp(pass, pass2) != 0)
 			errx(1, "passwords don't match");
 		explicit_bzero(pass2, sizeof(pass2));
 	}
-	if (bcrypt_pbkdf(pass, strlen(pass), salt, saltlen, key, keylen, rounds) == -1)
+	if (bcrypt_pbkdf(pass, strlen(pass), salt, saltlen, key,
+	    keylen, rounds) == -1)
 		errx(1, "bcrypt pbkdf");
 	explicit_bzero(pass, sizeof(pass));
 }
@@ -734,7 +739,8 @@ sign(const char *seckeyfile, const char *msgfile, const char *sigfile,
 	if (embedded)
 		writesignedmsg(sigfile, &sig, ident, msg, msglen);
 	else
-		writekeyfile(sigfile, "SIGNATURE", &sig, sizeof(sig), ident, O_TRUNC, 0666);
+		writekeyfile(sigfile, "SIGNATURE", &sig, sizeof(sig), ident,
+		    O_TRUNC, 0666);
 
 	free(msg);
 }
@@ -882,7 +888,8 @@ ekpubencrypt(const char *pubkeyfile, const char *ident, const char *msgfile, con
  * authenticated secret key version
  */
 static void
-pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile, const char *msgfile, const char *encfile)
+pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
+    const char *msgfile, const char *encfile)
 {
 	char myident[IDENTLEN];
 	struct encmsg encmsg;
@@ -940,7 +947,8 @@ symencrypt(const char *msgfile, const char *encfile, int rounds)
  * decrypt a file, either public key or symmetric based on header
  */
 static void
-decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile, const char *encfile)
+decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
+    const char *encfile)
 {
 	char ident[IDENTLEN];
 	uint8_t *encdata;
