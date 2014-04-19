@@ -472,9 +472,11 @@ readkeyfile(const char *filename, void *key, size_t keylen, char *ident)
  * caller creates and provides salt.
  * if rounds is 0 (no password requested), generates a dummy zero key.
  */
+typedef struct { int v; } kdf_allowstdin;
+typedef struct { int v; } kdf_confirm;
 static void
-kdf(uint8_t *salt, size_t saltlen, int rounds, int allowstdin, int confirm,
-    uint8_t *key, size_t keylen)
+kdf(uint8_t *salt, size_t saltlen, int rounds, kdf_allowstdin allowstdin,
+    kdf_confirm confirm, uint8_t *key, size_t keylen)
 {
 	char pass[1024];
 	int rppflags = RPP_ECHO_OFF;
@@ -484,13 +486,13 @@ kdf(uint8_t *salt, size_t saltlen, int rounds, int allowstdin, int confirm,
 		return;
 	}
 
-	if (allowstdin && !isatty(STDIN_FILENO))
+	if (allowstdin.v && !isatty(STDIN_FILENO))
 		rppflags |= RPP_STDIN;
 	if (!readpassphrase("passphrase: ", pass, sizeof(pass), rppflags))
 		errx(1, "unable to read passphrase");
 	if (strlen(pass) == 0)
 		errx(1, "please provide a password");
-	if (confirm && !(rppflags & RPP_STDIN)) {
+	if (confirm.v && !(rppflags & RPP_STDIN)) {
 		char pass2[1024];
 		if (!readpassphrase("confirm passphrase: ", pass2,
 		    sizeof(pass2), rppflags))
@@ -593,10 +595,12 @@ getpubkey(const char *pubkeyfile, const char *ident, struct pubkey *pubkey)
  * 2. default seckey file
  */
 static void
-getseckey(const char *seckeyfile, struct seckey *seckey, char *ident, int allowstdin)
+getseckey(const char *seckeyfile, struct seckey *seckey, char *ident,
+    kdf_allowstdin allowstdin)
 {
 	char dummyident[IDENTLEN];
 	uint8_t symkey[SYMKEYBYTES];
+	kdf_confirm confirm = { 0 };
 
 	int rounds;
 
@@ -608,7 +612,7 @@ getseckey(const char *seckeyfile, struct seckey *seckey, char *ident, int allows
 		errx(1, "unsupported KDF");
 	rounds = ntohl(seckey->kdfrounds);
 	kdf(seckey->salt, sizeof(seckey->salt), rounds,
-	    allowstdin, 0, symkey, sizeof(symkey));
+	    allowstdin, confirm, symkey, sizeof(symkey));
 	symdecryptmsg(seckey->sigkey, sizeof(seckey->sigkey) + sizeof(seckey->enckey),
 	    seckey->box, symkey);
 	explicit_bzero(symkey, sizeof(symkey));
@@ -649,6 +653,8 @@ generate(const char *pubkeyfile, const char *seckeyfile, int rounds,
 	struct seckey seckey;
 	uint8_t symkey[SYMKEYBYTES];
 	uint8_t fingerprint[FPLEN];
+	kdf_allowstdin allowstdin = { 1 };
+	kdf_confirm confirm = { 1 };
 
 	if (!seckeyfile)
 		seckeyfile = gethomefile("seckey");
@@ -668,7 +674,8 @@ generate(const char *pubkeyfile, const char *seckeyfile, int rounds,
 	seckey.kdfrounds = htonl(rounds);
 	randombytes(seckey.salt, sizeof(seckey.salt));
 
-	kdf(seckey.salt, sizeof(seckey.salt), rounds, 1, 1, symkey, sizeof(symkey));
+	kdf(seckey.salt, sizeof(seckey.salt), rounds, allowstdin, confirm,
+	    symkey, sizeof(symkey));
 	symencryptmsg(seckey.sigkey, sizeof(seckey.sigkey) + sizeof(seckey.enckey),
 	    seckey.box, symkey);
 	explicit_bzero(symkey, sizeof(symkey));
@@ -724,8 +731,9 @@ sign(const char *seckeyfile, const char *msgfile, const char *sigfile,
 	char ident[IDENTLEN];
 	uint8_t *msg;
 	unsigned long long msglen;
+	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 
-	getseckey(seckeyfile, &seckey, ident, strcmp(msgfile, "-") != 0);
+	getseckey(seckeyfile, &seckey, ident, allowstdin);
 
 	msg = readall(msgfile, &msglen);
 
@@ -897,10 +905,11 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	struct seckey seckey;
 	uint8_t *msg;
 	unsigned long long msglen;
+	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 
 	getpubkey(pubkeyfile, ident, &pubkey);
 
-	getseckey(seckeyfile, &seckey, myident, strcmp(msgfile, "-") != 0);
+	getseckey(seckeyfile, &seckey, myident, allowstdin);
 
 	msg = readall(msgfile, &msglen);
 
@@ -925,6 +934,8 @@ symencrypt(const char *msgfile, const char *encfile, int rounds)
 	uint8_t symkey[SYMKEYBYTES];
 	uint8_t *msg;
 	unsigned long long msglen;
+	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
+	kdf_confirm confirm = { 1 };
 
 	msg = readall(msgfile, &msglen);
 
@@ -933,7 +944,7 @@ symencrypt(const char *msgfile, const char *encfile, int rounds)
 	symmsg.kdfrounds = htonl(rounds);
 	randombytes(symmsg.salt, sizeof(symmsg.salt));
 	kdf(symmsg.salt, sizeof(symmsg.salt), rounds,
-	    strcmp(msgfile, "-") != 0, 1, symkey, sizeof(symkey));
+	    allowstdin, confirm, symkey, sizeof(symkey));
 
 	symencryptmsg(msg, msglen, symmsg.box, symkey);
 	explicit_bzero(symkey, sizeof(symkey));
@@ -988,20 +999,23 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
  		goto fail;
 
 	if (memcmp(hdr.alg, SYMALG, 2) == 0) {
+		kdf_allowstdin allowstdin = { strcmp(encfile, "-") != 0 };
+		kdf_confirm confirm = { 0 };
 		if (rv != sizeof(hdr.symmsg))
  			goto fail;
 		if (memcmp(hdr.symmsg.kdfalg, KDFALG, 2) != 0)
 			errx(1, "unsupported KDF");
 		rounds = ntohl(hdr.symmsg.kdfrounds);
 		kdf(hdr.symmsg.salt, sizeof(hdr.symmsg.salt), rounds,
-		    strcmp(encfile, "-") != 0, 0, symkey, sizeof(symkey));
+		    allowstdin, confirm, symkey, sizeof(symkey));
 		symdecryptmsg(msg, msglen, hdr.symmsg.box, symkey);
 		explicit_bzero(symkey, sizeof(symkey));
 	} else if (memcmp(hdr.alg, ENCALG, 2) == 0) {
+		kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 		if (rv != sizeof(hdr.encmsg))
 			goto fail;
 		getpubkey(pubkeyfile, ident, &pubkey);
-		getseckey(seckeyfile, &seckey, NULL, strcmp(msgfile, "-") != 0);
+		getseckey(seckeyfile, &seckey, NULL, allowstdin);
 		/* pub/sec pairs work both ways */
 		if (memcmp(hdr.encmsg.pubfingerprint, pubkey.fingerprint, FPLEN) == 0) {
 			if (memcmp(hdr.encmsg.secfingerprint, seckey.fingerprint, FPLEN) != 0)
@@ -1013,9 +1027,10 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		pubdecryptmsg(msg, msglen, hdr.encmsg.box, pubkey.enckey, seckey.enckey);
 		explicit_bzero(&seckey, sizeof(seckey));
 	} else if (memcmp(hdr.alg, EKCALG, 2) == 0) {
+		kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 		if (rv != sizeof(hdr.ekcmsg))
 			goto fail;
-		getseckey(seckeyfile, &seckey, NULL, strcmp(msgfile, "-") != 0);
+		getseckey(seckeyfile, &seckey, NULL, allowstdin);
 		if (memcmp(hdr.ekcmsg.pubfingerprint, seckey.fingerprint, FPLEN) != 0)
 			goto fpfail;
 
