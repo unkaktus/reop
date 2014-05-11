@@ -454,10 +454,12 @@ readkeyfile(const char *filename, void *key, size_t keylen, char *ident)
 	char *keydata;
 	unsigned long long keydatalen;
 	char *begin, *end;
+	const char *beginreop = "-----BEGIN REOP";
+	const char *endreop = "-----END REOP";
 
 	keydata = readall(filename, &keydatalen);
-	if (strncmp(keydata, "-----BEGIN REOP", 15) != 0 ||
-	    !(end = strstr(keydata, "-----END REOP")))
+	if (strncmp(keydata, beginreop, strlen(beginreop)) != 0 ||
+	    !(end = strstr(keydata, endreop)))
 		errx(1, "invalid key: %s", filename);
 	*end = 0;
 	if (!(begin = strchr(keydata, '\n')))
@@ -522,6 +524,8 @@ findpubkey(const char *ident)
 	static int numkeys;
 	static int done;
 	int i;
+	const char *beginreop = "-----BEGIN REOP PUBLIC KEY----\n";
+	const char *endreop = "-----END REOP PUBLIC KEY-----\n";
 
 	if (!done) {
 		char line[1024];
@@ -539,7 +543,7 @@ findpubkey(const char *ident)
 			identline = 1;
 			if (line[0] == 0 || line[0] == '\n')
 				continue;
-			if (strncmp(line, "-----BEGIN REOP PUBLIC KEY-----\n", 32) != 0)
+			if (strncmp(line, beginreop, strlen(beginreop)) != 0)
 				errx(1, "invalid keyring line: %s", line);
 			if (!(keys = realloc(keys, sizeof(*keys) * (numkeys + 1))))
 				err(1, "realloc keyring");
@@ -551,7 +555,7 @@ findpubkey(const char *ident)
 					identline = 0;
 					continue;
 				}
-				if (strncmp(line, "-----END REOP PUBLIC KEY-----\n", 30) == 0)
+				if (strncmp(line, endreop, strlen(endreop)) == 0)
 					break;
 				strlcat(buf, line, sizeof(buf));
 			}
@@ -792,12 +796,15 @@ verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet)
 	uint8_t *msgdata;
 	unsigned long long msgdatalen;
 	char *begin, *end;
+	const char *beginreopmsg = "-----BEGIN REOP SIGNED MESSAGE-----\n";
+	const char *beginreopsig = "-----BEGIN REOP SIGNATURE-----\n";
+	const char *endreopmsg = "-----END REOP SIGNED MESSAGE-----\n";
 
 	msgdata = readall(sigfile, &msgdatalen);
-	if (strncmp(msgdata, "-----BEGIN REOP SIGNED MESSAGE-----\n", 36) != 0)
+	if (strncmp(msgdata, beginreopmsg, strlen(beginreopmsg)) != 0)
  		goto fail;
 	begin = msgdata + 36;
-	if (!(end = strstr(begin, "-----BEGIN REOP SIGNATURE-----\n")))
+	if (!(end = strstr(begin, beginreopsig)))
  		goto fail;
 	*end = 0;
 
@@ -805,7 +812,7 @@ verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet)
 	msglen = end - begin;
 
 	begin = end + 31;
-	if (!(end = strstr(begin, "-----END REOP SIGNED MESSAGE-----\n")))
+	if (!(end = strstr(begin, endreopmsg)))
  		goto fail;
 	*end = 0;
 
@@ -979,18 +986,21 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 	uint8_t symkey[SYMKEYBYTES];
 	char *begin, *end;
 	int fd, rounds, rv;
+	const char *beginreopmsg = "-----BEGIN REOP ENCRYPTED MESSAGE-----\n";
+	const char *beginreopdata = "-----BEGIN REOP ENCRYPTED MESSAGE DATA-----\n";
+	const char *endreopmsg = "-----END REOP ENCRYPTED MESSAGE-----\n";
 
 	encdata = readall(encfile, &encdatalen);
-	if (strncmp(encdata, "-----BEGIN REOP ENCRYPTED MESSAGE-----\n", 39) != 0)
+	if (strncmp(encdata, beginreopmsg, strlen(beginreopmsg)) != 0)
  		goto fail;
 	begin = readident(encdata + 39, ident);
-	if (!(end = strstr(begin, "-----BEGIN REOP ENCRYPTED MESSAGE DATA-----\n")))
+	if (!(end = strstr(begin, beginreopdata)))
  		goto fail;
 	*end = 0;
 	if ((rv = b64_pton(begin, (void *)&hdr, sizeof(hdr))) == -1)
  		goto fail;
 	begin = end + 44;
-	if (!(end = strstr(begin, "-----END REOP ENCRYPTED MESSAGE-----\n")))
+	if (!(end = strstr(begin, endreopmsg)))
  		goto fail;
 	*end = 0;
 
