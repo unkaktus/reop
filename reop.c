@@ -434,8 +434,9 @@ gethomefile(const char *filename)
 static char *
 readident(char *buf, char *ident)
 {
-	if (IDENTLEN != 64)
-		errx(1, "wrong IDENTLEN");
+#if IDENTLEN != 64
+#error fix sscanf
+#endif
 	if (sscanf(buf, "ident:%63s", ident) != 1)
 		errx(1, "no ident found: %s", buf);
 	if (!(buf = strchr(buf + 1, '\n')))
@@ -1068,7 +1069,6 @@ main(int argc, char **argv)
 		SIGN,
 		VERIFY
 	} verb = NONE;
-
 
 	rounds = 42;
 
