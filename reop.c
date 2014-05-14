@@ -24,6 +24,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
 #include <err.h>
 #include <unistd.h>
 #ifdef __OpenBSD__
@@ -1203,6 +1204,17 @@ main(int argc, char **argv)
 		if ((!pubkeyfile && seckeyfile) ||
 		    (!seckeyfile && pubkeyfile))
 			usage("must specify pubkey and seckey");
+		/* if none, create ~/.reop */
+		if (!pubkeyfile && !seckeyfile) {
+			char buf[1024];
+			const char *home;
+
+			if (!(home = getenv("HOME")))
+				errx(1, "can't find HOME");
+			snprintf(buf, sizeof(buf), "%s/.reop", home);
+			if (mkdir(buf, 0700) == -1 && errno != EEXIST)
+				err(1, "Unable to create ~/.reop");
+		}
 		generate(pubkeyfile, seckeyfile, rounds, ident);
 		break;
 	case SIGN:
