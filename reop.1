@@ -47,9 +47,8 @@
 .Sh DESCRIPTION
 The
 .Nm
-utility creates and verifies cryptographic signatures.
-A signature verifies the integrity of a
-.Ar message .
+utility creates and verifies cryptographic signatures and encrypts and
+decrypts files.
 The mode of operation is selected with the following options:
 .Bl -tag -width Dsssigfile
 .It Fl A
@@ -65,8 +64,8 @@ perform symmetric encryption.
 .Pp
 When run with a public key, will encrypt the message so that it can be
 decrypted by the matching secret key.
-Public key encryption also uses a different secret key to authenticate the
-encryptor.
+Public key encryption also uses encryptor's secret key to authenticate the
+message.
 Note that the same two keys used to encrypt a message can also be used
 to decrypt it; this construct is not strictly one way.
 .It Fl G
