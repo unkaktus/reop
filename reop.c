@@ -46,13 +46,13 @@
 #define ENCNONCEBYTES crypto_box_curve25519xsalsa20poly1305_NONCEBYTES
 #define ENCZEROBYTES crypto_box_curve25519xsalsa20poly1305_ZEROBYTES
 #define ENCBOXZEROBYTES crypto_box_curve25519xsalsa20poly1305_BOXZEROBYTES
-#define ENCBOXBYTES (ENCZEROBYTES - ENCBOXZEROBYTES)
+#define ENCBOXBYTES crypto_box_curve25519xsalsa20poly1305_MACBYTES
 
 #define SYMKEYBYTES crypto_secretbox_xsalsa20poly1305_KEYBYTES
 #define SYMNONCEBYTES crypto_secretbox_xsalsa20poly1305_NONCEBYTES
 #define SYMZEROBYTES crypto_secretbox_xsalsa20poly1305_ZEROBYTES
 #define SYMBOXZEROBYTES crypto_secretbox_xsalsa20poly1305_BOXZEROBYTES
-#define SYMBOXBYTES (SYMZEROBYTES - SYMBOXZEROBYTES)
+#define SYMBOXBYTES crypto_secretbox_xsalsa20poly1305_MACBYTES
 
 /* magic */
 #define SIGALG "Ed"	/* Ed25519 */
@@ -189,22 +189,8 @@ xfree(void *p, size_t len)
 static void
 symencryptmsg(uint8_t *buf, unsigned long long msglen, uint8_t *box, uint8_t *symkey)
 {
-	uint8_t *cmsg, *msg;
-
 	randombytes(box, SYMNONCEBYTES);
-
-	msg = xmalloc(msglen + SYMZEROBYTES);
-	memset(msg, 0, SYMZEROBYTES);
-	memcpy(msg + SYMZEROBYTES, buf, msglen);
-	cmsg = xmalloc(msglen + SYMZEROBYTES);
-
-	crypto_secretbox_xsalsa20poly1305(cmsg, msg, msglen + SYMZEROBYTES,
-	    box, symkey);
-	xfree(msg, msglen + SYMZEROBYTES);
-
-	memcpy(box + SYMNONCEBYTES, cmsg + SYMBOXZEROBYTES, SYMBOXBYTES);
-	memcpy(buf, cmsg + SYMZEROBYTES, msglen);
-	xfree(cmsg, msglen + SYMZEROBYTES);
+	crypto_secretbox_detached(buf, box + SYMNONCEBYTES, buf, msglen, box, symkey);
 }
 
 /*
@@ -216,21 +202,9 @@ static void
 symdecryptmsg(uint8_t *buf, unsigned long long msglen, const uint8_t *box,
     uint8_t *symkey)
 {
-	uint8_t *msg, *cmsg;
-
-	cmsg = xmalloc(msglen + SYMZEROBYTES);
-	memset(cmsg, 0, SYMBOXZEROBYTES);
-	memcpy(cmsg + SYMBOXZEROBYTES, box + SYMNONCEBYTES, SYMBOXBYTES);
-	memcpy(cmsg + SYMZEROBYTES, buf, msglen);
-	msg = xmalloc(msglen + SYMZEROBYTES);
-
-	if (crypto_secretbox_xsalsa20poly1305_open(msg, cmsg, msglen +
-	    SYMZEROBYTES, box, symkey) == -1)
+	if (crypto_secretbox_open_detached(buf, buf, box + SYMNONCEBYTES,
+	                                   msglen, box, symkey) == -1)
 		errx(1, "decryption failed");
-	xfree(cmsg, msglen + SYMZEROBYTES);
-
-	memcpy(buf, msg + SYMZEROBYTES, msglen);
-	xfree(msg, msglen + SYMZEROBYTES);
 }
 
 /*
@@ -242,22 +216,9 @@ static void
 pubencryptmsg(uint8_t *buf, unsigned long long msglen, uint8_t *box,
     uint8_t *pubkey, uint8_t *seckey)
 {
-	uint8_t *cmsg, *msg;
-
 	randombytes(box, ENCNONCEBYTES);
-
-	msg = xmalloc(msglen + ENCZEROBYTES);
-	memset(msg, 0, ENCZEROBYTES);
-	memcpy(msg + ENCZEROBYTES, buf, msglen);
-	cmsg = xmalloc(msglen + ENCZEROBYTES);
-
-	crypto_box_curve25519xsalsa20poly1305(cmsg, msg, msglen + ENCZEROBYTES,
-	    box, pubkey, seckey);
-	xfree(msg, msglen + SYMZEROBYTES);
-
-	memcpy(box + ENCNONCEBYTES, cmsg + ENCBOXZEROBYTES, ENCBOXBYTES);
-	memcpy(buf, cmsg + ENCZEROBYTES, msglen);
-	xfree(cmsg, msglen + ENCZEROBYTES);
+	crypto_box_detached(buf, box + ENCNONCEBYTES, buf, msglen, box,
+	                    pubkey, seckey);
 }
 
 /*
@@ -269,21 +230,9 @@ static void
 pubdecryptmsg(uint8_t *buf, unsigned long long msglen, uint8_t *box,
     uint8_t *pubkey, uint8_t *seckey)
 {
-	uint8_t *msg, *cmsg;
-
-	cmsg = xmalloc(msglen + ENCZEROBYTES);
-	memset(cmsg, 0, ENCBOXZEROBYTES);
-	memcpy(cmsg + ENCBOXZEROBYTES, box + ENCNONCEBYTES, ENCBOXBYTES);
-	memcpy(cmsg + ENCZEROBYTES, buf, msglen);
-	msg = xmalloc(msglen + ENCZEROBYTES);
-
-	if (crypto_box_curve25519xsalsa20poly1305_open(msg, cmsg,
-	    msglen + ENCZEROBYTES, box, pubkey, seckey) == -1)
+	if (crypto_box_open_detached(buf, buf, box + ENCNONCEBYTES,
+	                             msglen, box, pubkey, seckey) == -1)
 		errx(1, "decryption failed");
-	xfree(cmsg, msglen + ENCZEROBYTES);
-
-	memcpy(buf, msg + ENCZEROBYTES, msglen);
-	xfree(msg, msglen + ENCZEROBYTES);
 }
 
 /*
