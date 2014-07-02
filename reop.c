@@ -278,17 +278,6 @@ verifymsg(struct pubkey *pubkey, uint8_t *msg, unsigned long long msglen,
 	free(dummybuf);
 }
 
-#ifdef __OpenBSD__
-/*
- * override randombytes. this version works in chroot.
- */
-void
-randombytes(unsigned char *x, unsigned long long xlen)
-{
-	arc4random_buf(x, xlen);
-}
-#endif
-
 /* file utilities */
 static uint8_t *
 readall(const char *filename, unsigned long long *msglenp)
