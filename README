@@ -97,6 +97,9 @@ now you have to compose the operations manually.
 
 Nonces, where necessary, are generated randomly.
 
+[The next two paragraphs are a little dated;
+	reop is using libsodium wrappers now.]
+
 The nacl functions are all accessed via wrappers, very similar to the C++
 wrappers. The C nacl API requires the caller to provide padded buffers
 (i.e., ciphertext, auth tag, and zeroed scratch space all contiguous in memory),
