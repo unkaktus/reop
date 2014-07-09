@@ -46,13 +46,13 @@
 #define ENCNONCEBYTES crypto_box_curve25519xsalsa20poly1305_NONCEBYTES
 #define ENCZEROBYTES crypto_box_curve25519xsalsa20poly1305_ZEROBYTES
 #define ENCBOXZEROBYTES crypto_box_curve25519xsalsa20poly1305_BOXZEROBYTES
-#define ENCBOXBYTES (ENCZEROBYTES - ENCBOXZEROBYTES)
+#define ENCBOXBYTES crypto_box_curve25519xsalsa20poly1305_MACBYTES
 
 #define SYMKEYBYTES crypto_secretbox_xsalsa20poly1305_KEYBYTES
 #define SYMNONCEBYTES crypto_secretbox_xsalsa20poly1305_NONCEBYTES
 #define SYMZEROBYTES crypto_secretbox_xsalsa20poly1305_ZEROBYTES
 #define SYMBOXZEROBYTES crypto_secretbox_xsalsa20poly1305_BOXZEROBYTES
-#define SYMBOXBYTES (SYMZEROBYTES - SYMBOXZEROBYTES)
+#define SYMBOXBYTES crypto_secretbox_xsalsa20poly1305_MACBYTES
 
 /* magic */
 #define SIGALG "Ed"	/* Ed25519 */
@@ -168,7 +168,7 @@ xmalloc(size_t len)
 static void
 xfree(void *p, size_t len)
 {
-	explicit_bzero(p, len);
+	sodium_memzero(p, len);
 	free(p);
 }
 
@@ -189,22 +189,8 @@ xfree(void *p, size_t len)
 static void
 symencryptmsg(uint8_t *buf, unsigned long long msglen, uint8_t *box, uint8_t *symkey)
 {
-	uint8_t *cmsg, *msg;
-
 	randombytes(box, SYMNONCEBYTES);
-
-	msg = xmalloc(msglen + SYMZEROBYTES);
-	memset(msg, 0, SYMZEROBYTES);
-	memcpy(msg + SYMZEROBYTES, buf, msglen);
-	cmsg = xmalloc(msglen + SYMZEROBYTES);
-
-	crypto_secretbox_xsalsa20poly1305(cmsg, msg, msglen + SYMZEROBYTES,
-	    box, symkey);
-	xfree(msg, msglen + SYMZEROBYTES);
-
-	memcpy(box + SYMNONCEBYTES, cmsg + SYMBOXZEROBYTES, SYMBOXBYTES);
-	memcpy(buf, cmsg + SYMZEROBYTES, msglen);
-	xfree(cmsg, msglen + SYMZEROBYTES);
+	crypto_secretbox_detached(buf, box + SYMNONCEBYTES, buf, msglen, box, symkey);
 }
 
 /*
@@ -216,21 +202,9 @@ static void
 symdecryptmsg(uint8_t *buf, unsigned long long msglen, const uint8_t *box,
     uint8_t *symkey)
 {
-	uint8_t *msg, *cmsg;
-
-	cmsg = xmalloc(msglen + SYMZEROBYTES);
-	memset(cmsg, 0, SYMBOXZEROBYTES);
-	memcpy(cmsg + SYMBOXZEROBYTES, box + SYMNONCEBYTES, SYMBOXBYTES);
-	memcpy(cmsg + SYMZEROBYTES, buf, msglen);
-	msg = xmalloc(msglen + SYMZEROBYTES);
-
-	if (crypto_secretbox_xsalsa20poly1305_open(msg, cmsg, msglen +
-	    SYMZEROBYTES, box, symkey) == -1)
+	if (crypto_secretbox_open_detached(buf, buf, box + SYMNONCEBYTES,
+	                                   msglen, box, symkey) == -1)
 		errx(1, "decryption failed");
-	xfree(cmsg, msglen + SYMZEROBYTES);
-
-	memcpy(buf, msg + SYMZEROBYTES, msglen);
-	xfree(msg, msglen + SYMZEROBYTES);
 }
 
 /*
@@ -242,22 +216,9 @@ static void
 pubencryptmsg(uint8_t *buf, unsigned long long msglen, uint8_t *box,
     uint8_t *pubkey, uint8_t *seckey)
 {
-	uint8_t *cmsg, *msg;
-
 	randombytes(box, ENCNONCEBYTES);
-
-	msg = xmalloc(msglen + ENCZEROBYTES);
-	memset(msg, 0, ENCZEROBYTES);
-	memcpy(msg + ENCZEROBYTES, buf, msglen);
-	cmsg = xmalloc(msglen + ENCZEROBYTES);
-
-	crypto_box_curve25519xsalsa20poly1305(cmsg, msg, msglen + ENCZEROBYTES,
-	    box, pubkey, seckey);
-	xfree(msg, msglen + SYMZEROBYTES);
-
-	memcpy(box + ENCNONCEBYTES, cmsg + ENCBOXZEROBYTES, ENCBOXBYTES);
-	memcpy(buf, cmsg + ENCZEROBYTES, msglen);
-	xfree(cmsg, msglen + ENCZEROBYTES);
+	crypto_box_detached(buf, box + ENCNONCEBYTES, buf, msglen, box,
+	                    pubkey, seckey);
 }
 
 /*
@@ -269,21 +230,9 @@ static void
 pubdecryptmsg(uint8_t *buf, unsigned long long msglen, uint8_t *box,
     uint8_t *pubkey, uint8_t *seckey)
 {
-	uint8_t *msg, *cmsg;
-
-	cmsg = xmalloc(msglen + ENCZEROBYTES);
-	memset(cmsg, 0, ENCBOXZEROBYTES);
-	memcpy(cmsg + ENCBOXZEROBYTES, box + ENCNONCEBYTES, ENCBOXBYTES);
-	memcpy(cmsg + ENCZEROBYTES, buf, msglen);
-	msg = xmalloc(msglen + ENCZEROBYTES);
-
-	if (crypto_box_curve25519xsalsa20poly1305_open(msg, cmsg,
-	    msglen + ENCZEROBYTES, box, pubkey, seckey) == -1)
+	if (crypto_box_open_detached(buf, buf, box + ENCNONCEBYTES,
+	                             msglen, box, pubkey, seckey) == -1)
 		errx(1, "decryption failed");
-	xfree(cmsg, msglen + ENCZEROBYTES);
-
-	memcpy(buf, msg + ENCZEROBYTES, msglen);
-	xfree(msg, msglen + ENCZEROBYTES);
 }
 
 /*
@@ -328,17 +277,6 @@ verifymsg(struct pubkey *pubkey, uint8_t *msg, unsigned long long msglen,
 	free(sigbuf);
 	free(dummybuf);
 }
-
-#ifdef __OpenBSD__
-/*
- * override randombytes. this version works in chroot.
- */
-void
-randombytes(unsigned char *x, unsigned long long xlen)
-{
-	arc4random_buf(x, xlen);
-}
-#endif
 
 /* file utilities */
 static uint8_t *
@@ -493,23 +431,25 @@ kdf(uint8_t *salt, size_t saltlen, int rounds, kdf_allowstdin allowstdin,
 
 	if (allowstdin.v && !isatty(STDIN_FILENO))
 		rppflags |= RPP_STDIN;
+	sodium_mlock(pass, sizeof(pass));
 	if (!readpassphrase("passphrase: ", pass, sizeof(pass), rppflags))
 		errx(1, "unable to read passphrase");
 	if (strlen(pass) == 0)
 		errx(1, "please provide a password");
 	if (confirm.v && !(rppflags & RPP_STDIN)) {
 		char pass2[1024];
+		sodium_mlock(pass2, sizeof(pass2));
 		if (!readpassphrase("confirm passphrase: ", pass2,
 		    sizeof(pass2), rppflags))
 			errx(1, "unable to read passphrase");
 		if (strcmp(pass, pass2) != 0)
 			errx(1, "passwords don't match");
-		explicit_bzero(pass2, sizeof(pass2));
+		sodium_munlock(pass2, sizeof(pass2));
 	}
 	if (bcrypt_pbkdf(pass, strlen(pass), salt, saltlen, key,
 	    keylen, rounds) == -1)
 		errx(1, "bcrypt pbkdf");
-	explicit_bzero(pass, sizeof(pass));
+	sodium_munlock(pass, sizeof(pass));
 }
 
 /*
@@ -614,6 +554,8 @@ getseckey(const char *seckeyfile, struct seckey *seckey, char *ident,
 	if (!seckeyfile)
 		seckeyfile = gethomefile("seckey");
 
+	sodium_mlock(symkey, sizeof(symkey));
+
 	readkeyfile(seckeyfile, seckey, sizeof(*seckey), ident ? ident : dummyident);
 	if (memcmp(seckey->kdfalg, KDFALG, 2) != 0)
 		errx(1, "unsupported KDF");
@@ -622,7 +564,7 @@ getseckey(const char *seckeyfile, struct seckey *seckey, char *ident,
 	    allowstdin, confirm, symkey, sizeof(symkey));
 	symdecryptmsg(seckey->sigkey, sizeof(seckey->sigkey) + sizeof(seckey->enckey),
 	    seckey->box, symkey);
-	explicit_bzero(symkey, sizeof(symkey));
+	sodium_munlock(symkey, sizeof(symkey));
 }
 
 /*
@@ -640,10 +582,11 @@ writekeyfile(const char *filename, const char *info, const void *key,
 	snprintf(header, sizeof(header), "-----BEGIN REOP %s-----\nident:%s\n",
 	    info, ident);
 	writeall(fd, header, strlen(header), filename);
+	sodium_mlock(b64, sizeof(b64));
 	if (b64_ntop(key, keylen, b64, sizeof(b64)) == -1)
 		errx(1, "b64 encode failed");
 	writeb64data(fd, filename, b64);
-	explicit_bzero(b64, sizeof(b64));
+	sodium_munlock(b64, sizeof(b64));
 	snprintf(header, sizeof(header), "-----END REOP %s-----\n", info);
 	writeall(fd, header, strlen(header), filename);
 	close(fd);
@@ -666,6 +609,9 @@ generate(const char *pubkeyfile, const char *seckeyfile, int rounds,
 	if (!seckeyfile)
 		seckeyfile = gethomefile("seckey");
 
+	sodium_mlock(&seckey, sizeof(seckey));
+	sodium_mlock(&symkey, sizeof(symkey));
+
 	memset(&pubkey, 0, sizeof(pubkey));
 	memset(&seckey, 0, sizeof(seckey));
 
@@ -685,11 +631,11 @@ generate(const char *pubkeyfile, const char *seckeyfile, int rounds,
 	    symkey, sizeof(symkey));
 	symencryptmsg(seckey.sigkey, sizeof(seckey.sigkey) + sizeof(seckey.enckey),
 	    seckey.box, symkey);
-	explicit_bzero(symkey, sizeof(symkey));
+	sodium_munlock(symkey, sizeof(symkey));
 
 	writekeyfile(seckeyfile, "SECRET KEY", &seckey, sizeof(seckey),
 	    ident, O_EXCL, 0600);
-	explicit_bzero(&seckey, sizeof(seckey));
+	sodium_munlock(&seckey, sizeof(seckey));
 
 	memcpy(pubkey.fingerprint, fingerprint, FPLEN);
 	memcpy(pubkey.sigalg, SIGALG, 2);
@@ -717,10 +663,11 @@ writesignedmsg(const char *filename, struct sig *sig,
 	snprintf(header, sizeof(header), "-----BEGIN REOP SIGNATURE-----\n"
 	    "ident:%s\n", ident);
 	writeall(fd, header, strlen(header), filename);
+	sodium_mlock(b64, sizeof(b64));
 	if (b64_ntop((void *)sig, sizeof(*sig), b64, sizeof(b64)) == -1)
 		errx(1, "b64 encode failed");
 	writeb64data(fd, filename, b64);
-	explicit_bzero(b64, sizeof(b64));
+	sodium_munlock(b64, sizeof(b64));
 	snprintf(header, sizeof(header), "-----END REOP SIGNED MESSAGE-----\n");
 	writeall(fd, header, strlen(header), filename);
 	close(fd);
@@ -740,6 +687,7 @@ sign(const char *seckeyfile, const char *msgfile, const char *sigfile,
 	unsigned long long msglen;
 	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 
+	sodium_mlock(&seckey, sizeof(seckey));
 	getseckey(seckeyfile, &seckey, ident, allowstdin);
 
 	msg = readall(msgfile, &msglen);
@@ -749,7 +697,7 @@ sign(const char *seckeyfile, const char *msgfile, const char *sigfile,
 	memcpy(sig.fingerprint, seckey.fingerprint, FPLEN);
 	memcpy(sig.sigalg, SIGALG, 2);
 
-	explicit_bzero(&seckey, sizeof(seckey));
+	sodium_munlock(&seckey, sizeof(seckey));
 
 	if (embedded)
 		writesignedmsg(sigfile, &sig, ident, msg, msglen);
@@ -855,10 +803,11 @@ writeencfile(const char *filename, const void *hdr,
 	writeall(fd, header, strlen(header), filename);
 	snprintf(header, sizeof(header), "ident:%s\n", ident);
 	writeall(fd, header, strlen(header), filename);
+	sodium_mlock(b64, sizeof(b64));
 	if (b64_ntop(hdr, hdrlen, b64, sizeof(b64)) == -1)
 		errx(1, "b64 encode failed");
 	writeb64data(fd, filename, b64);
-	explicit_bzero(b64, sizeof(b64));
+	sodium_munlock(b64, sizeof(b64));
 
 	snprintf(header, sizeof(header), "-----BEGIN REOP ENCRYPTED MESSAGE DATA-----\n");
 	writeall(fd, header, strlen(header), filename);
@@ -885,6 +834,7 @@ ekpubencrypt(const char *pubkeyfile, const char *ident, const char *msgfile, con
 
 	getpubkey(pubkeyfile, ident, &pubkey);
 
+	sodium_mlock(&enckey, sizeof(enckey));
 	crypto_box_keypair(ekcmsg.pubkey, enckey);
 
 	msg = readall(msgfile, &msglen);
@@ -894,7 +844,7 @@ ekpubencrypt(const char *pubkeyfile, const char *ident, const char *msgfile, con
 
 	pubencryptmsg(msg, msglen, ekcmsg.box, pubkey.enckey, enckey);
 
-	explicit_bzero(&enckey, sizeof(enckey));
+	sodium_munlock(&enckey, sizeof(enckey));
 
 	writeencfile(encfile, &ekcmsg, sizeof(ekcmsg), "<ephemeral>", msg, msglen);
 
@@ -917,6 +867,8 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	unsigned long long msglen;
 	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 
+	sodium_mlock(&seckey, sizeof(seckey));
+
 	getpubkey(pubkeyfile, ident, &pubkey);
 
 	getseckey(seckeyfile, &seckey, myident, allowstdin);
@@ -927,7 +879,7 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	memcpy(encmsg.pubfingerprint, pubkey.fingerprint, FPLEN);
 	memcpy(encmsg.secfingerprint, seckey.fingerprint, FPLEN);
 	pubencryptmsg(msg, msglen, encmsg.box, pubkey.enckey, seckey.enckey);
-	explicit_bzero(&seckey, sizeof(seckey));
+	sodium_munlock(&seckey, sizeof(seckey));
 
 	writeencfile(encfile, &encmsg, sizeof(encmsg), myident, msg, msglen);
 
@@ -953,11 +905,12 @@ symencrypt(const char *msgfile, const char *encfile, int rounds)
 	memcpy(symmsg.symalg, SYMALG, 2);
 	symmsg.kdfrounds = htonl(rounds);
 	randombytes(symmsg.salt, sizeof(symmsg.salt));
+	sodium_mlock(symkey, sizeof(symkey));
 	kdf(symmsg.salt, sizeof(symmsg.salt), rounds,
 	    allowstdin, confirm, symkey, sizeof(symkey));
 
 	symencryptmsg(msg, msglen, symmsg.box, symkey);
-	explicit_bzero(symkey, sizeof(symkey));
+	sodium_munlock(symkey, sizeof(symkey));
 
 	writeencfile(encfile, &symmsg, sizeof(symmsg), "<symmetric>", msg, msglen);
 
@@ -1011,6 +964,9 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 	if (msglen == -1)
  		goto fail;
 
+	sodium_mlock(&symkey, sizeof(symkey));
+	sodium_mlock(&seckey, sizeof(seckey));
+
 	if (memcmp(hdr.alg, SYMALG, 2) == 0) {
 		kdf_allowstdin allowstdin = { strcmp(encfile, "-") != 0 };
 		kdf_confirm confirm = { 0 };
@@ -1022,7 +978,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		kdf(hdr.symmsg.salt, sizeof(hdr.symmsg.salt), rounds,
 		    allowstdin, confirm, symkey, sizeof(symkey));
 		symdecryptmsg(msg, msglen, hdr.symmsg.box, symkey);
-		explicit_bzero(symkey, sizeof(symkey));
+		sodium_munlock(symkey, sizeof(symkey));
 	} else if (memcmp(hdr.alg, ENCALG, 2) == 0) {
 		kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 		if (rv != sizeof(hdr.encmsg))
@@ -1038,7 +994,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 			goto fpfail;
 
 		pubdecryptmsg(msg, msglen, hdr.encmsg.box, pubkey.enckey, seckey.enckey);
-		explicit_bzero(&seckey, sizeof(seckey));
+		sodium_munlock(&seckey, sizeof(seckey));
 	} else if (memcmp(hdr.alg, EKCALG, 2) == 0) {
 		kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 		if (rv != sizeof(hdr.ekcmsg))
@@ -1048,7 +1004,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 			goto fpfail;
 
 		pubdecryptmsg(msg, msglen, hdr.ekcmsg.box, hdr.ekcmsg.pubkey, seckey.enckey);
-		explicit_bzero(&seckey, sizeof(seckey));
+		sodium_munlock(&seckey, sizeof(seckey));
 	}
 	fd = xopen(msgfile, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
 	writeall(fd, msg, msglen, msgfile);
