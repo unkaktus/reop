@@ -203,7 +203,7 @@ symdecryptmsg(uint8_t *buf, unsigned long long msglen, const uint8_t *box,
     uint8_t *symkey)
 {
 	if (crypto_secretbox_open_detached(buf, buf, box + SYMNONCEBYTES,
-	                                   msglen, box, symkey) == -1)
+	    msglen, box, symkey) == -1)
 		errx(1, "decryption failed");
 }
 
@@ -218,7 +218,7 @@ pubencryptmsg(uint8_t *buf, unsigned long long msglen, uint8_t *box,
 {
 	randombytes(box, ENCNONCEBYTES);
 	crypto_box_detached(buf, box + ENCNONCEBYTES, buf, msglen, box,
-	                    pubkey, seckey);
+	    pubkey, seckey);
 }
 
 /*
@@ -231,7 +231,7 @@ pubdecryptmsg(uint8_t *buf, unsigned long long msglen, uint8_t *box,
     uint8_t *pubkey, uint8_t *seckey)
 {
 	if (crypto_box_open_detached(buf, buf, box + ENCNONCEBYTES,
-	                             msglen, box, pubkey, seckey) == -1)
+	    msglen, box, pubkey, seckey) == -1)
 		errx(1, "decryption failed");
 }
 
@@ -438,6 +438,7 @@ kdf(uint8_t *salt, size_t saltlen, int rounds, kdf_allowstdin allowstdin,
 		errx(1, "please provide a password");
 	if (confirm.v && !(rppflags & RPP_STDIN)) {
 		char pass2[1024];
+
 		sodium_mlock(pass2, sizeof(pass2));
 		if (!readpassphrase("confirm passphrase: ", pass2,
 		    sizeof(pass2), rppflags))
