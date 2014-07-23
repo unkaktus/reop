@@ -242,13 +242,7 @@ static void
 signmsg(uint8_t *seckey, uint8_t *msg, unsigned long long msglen,
     uint8_t *sig)
 {
-	unsigned long long siglen;
-	uint8_t *sigbuf;
-
-	sigbuf = xmalloc(msglen + SIGBYTES);
-	crypto_sign_ed25519(sigbuf, &siglen, msg, msglen, seckey);
-	memcpy(sig, sigbuf, SIGBYTES);
-	free(sigbuf);
+	crypto_sign_detached(sig, NULL, msg, msglen, seckey);
 }
 
 /*
@@ -258,24 +252,12 @@ static void
 verifymsg(struct pubkey *pubkey, uint8_t *msg, unsigned long long msglen,
     struct sig *sig, int quiet)
 {
-	uint8_t *sigbuf, *dummybuf;
-	unsigned long long siglen, dummylen;
-
 	if (memcmp(pubkey->fingerprint, sig->fingerprint, FPLEN) != 0)
 		errx(1, "verification failed: checked against wrong key");
-
-	siglen = SIGBYTES + msglen;
-	sigbuf = xmalloc(siglen);
-	dummybuf = xmalloc(siglen);
-	memcpy(sigbuf, sig->sig, SIGBYTES);
-	memcpy(sigbuf + SIGBYTES, msg, msglen);
-	if (crypto_sign_ed25519_open(dummybuf, &dummylen, sigbuf, siglen,
-	    pubkey->sigkey) == -1)
+	if (crypto_sign_verify_detached(sig->sig, msg, msglen, pubkey->sigkey) == -1)
 		errx(1, "signature verification failed");
 	if (!quiet)
 		printf("Signature Verified\n");
-	free(sigbuf);
-	free(dummybuf);
 }
 
 /* file utilities */
