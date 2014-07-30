@@ -448,7 +448,7 @@ findpubkey(const char *ident)
 	static int numkeys;
 	static int done;
 	int i;
-	const char *beginreop = "-----BEGIN REOP PUBLIC KEY----\n";
+	const char *beginreop = "-----BEGIN REOP PUBLIC KEY-----\n";
 	const char *endreop = "-----END REOP PUBLIC KEY-----\n";
 
 	if (!done) {

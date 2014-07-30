@@ -3,6 +3,7 @@
 set -e
 
 clean() {
+	rm -fr fakehome
 	rm -f mypub mysec yourpub yoursec
 	rm -f trip.txt warn.txt.enc warn.txt.sig danger.txt
 	rm -f error.log
@@ -10,10 +11,12 @@ clean() {
 
 clean
 
+mkdir -p fakehome/.reop
 ../reop -G -p mypub -s mysec -n
-../reop -G -p yourpub -s yoursec -n
+../reop -G -i gorilla -p yourpub -s yoursec -n
+cp yourpub fakehome/.reop/pubkeyring
 
-cat orig.txt | ../reop -E -s mysec -p yourpub -m - -x - |
+cat orig.txt | env HOME=fakehome ../reop -E -s mysec -i gorilla -m - -x - |
 	../reop -D -s yoursec -p mypub -m - -x - > trip.txt
 diff -u orig.txt trip.txt
 
