@@ -28,6 +28,7 @@
 .Fl x Ar encfile
 .Nm reop
 .Fl E
+.Op Fl b
 .Op Fl i Ar ident
 .Fl m Ar message
 .Fl p Ar pubkey
@@ -78,6 +79,11 @@ Verify the message and signature match.
 .Pp
 The other options are as follows:
 .Bl -tag -width Dsssignature
+.It Fl b
+Use a binary format for encrypted files.
+This can result in a considerable space savings over the default base64
+encoded format.
+Decryption automatically detects the correct format.
 .It Fl e
 When signing, create a signed message instead of just a signature.
 .It Fl i Ar ident

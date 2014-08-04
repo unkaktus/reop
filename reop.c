@@ -130,6 +130,11 @@ usage(const char *error)
 	exit(1);
 }
 
+typedef struct { int v; } kdf_allowstdin;
+typedef struct { int v; } kdf_confirm;
+typedef struct { int v; } opt_binary;
+
+
 static int
 xopen(const char *fname, int oflags, mode_t mode)
 {
@@ -397,8 +402,6 @@ readkeyfile(const char *filename, void *key, size_t keylen, char *ident)
  * caller creates and provides salt.
  * if rounds is 0 (no password requested), generates a dummy zero key.
  */
-typedef struct { int v; } kdf_allowstdin;
-typedef struct { int v; } kdf_confirm;
 static void
 kdf(uint8_t *salt, size_t saltlen, int rounds, kdf_allowstdin allowstdin,
     kdf_confirm confirm, uint8_t *key, size_t keylen)
@@ -768,38 +771,56 @@ fail:
  */
 static void
 writeencfile(const char *filename, const void *hdr,
-    size_t hdrlen, const char *ident, uint8_t *msg, unsigned long long msglen)
+    size_t hdrlen, const char *ident, uint8_t *msg, unsigned long long msglen,
+    opt_binary binary)
 {
-	char header[1024];
-	char b64[1024];
-	char *b64data;
-	size_t b64len;
-	int fd;
-	
-	b64len = (msglen + 2) / 3 * 4 + 1;
-	b64data = xmalloc(b64len);
-	if (b64_ntop(msg, msglen, b64data, b64len) == -1)
-		errx(1, "b64 encode failed");
+	if (binary.v) {
+		int fd;
+		uint32_t identlen;
 
-	fd = xopen(filename, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
-	snprintf(header, sizeof(header), "-----BEGIN REOP ENCRYPTED MESSAGE-----\n");
-	writeall(fd, header, strlen(header), filename);
-	snprintf(header, sizeof(header), "ident:%s\n", ident);
-	writeall(fd, header, strlen(header), filename);
-	sodium_mlock(b64, sizeof(b64));
-	if (b64_ntop(hdr, hdrlen, b64, sizeof(b64)) == -1)
-		errx(1, "b64 encode failed");
-	writeb64data(fd, filename, b64);
-	sodium_munlock(b64, sizeof(b64));
+		identlen = strlen(ident);
+		identlen = htonl(identlen);
 
-	snprintf(header, sizeof(header), "-----BEGIN REOP ENCRYPTED MESSAGE DATA-----\n");
-	writeall(fd, header, strlen(header), filename);
-	writeb64data(fd, filename, b64data);
-	xfree(b64data, b64len);
+		fd = xopen(filename, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
 
-	snprintf(header, sizeof(header), "-----END REOP ENCRYPTED MESSAGE-----\n");
-	writeall(fd, header, strlen(header), filename);
-	close(fd);
+		writeall(fd, "RBF", 4, filename);
+		writeall(fd, hdr, hdrlen, filename);
+		writeall(fd, &identlen, sizeof(identlen), filename);
+		writeall(fd, ident, strlen(ident), filename);
+		writeall(fd, msg, msglen, filename);
+		close(fd);
+	} else {
+		char header[1024];
+		char b64[1024];
+		char *b64data;
+		size_t b64len;
+		int fd;
+
+		b64len = (msglen + 2) / 3 * 4 + 1;
+		b64data = xmalloc(b64len);
+		if (b64_ntop(msg, msglen, b64data, b64len) == -1)
+			errx(1, "b64 encode failed");
+
+		fd = xopen(filename, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
+		snprintf(header, sizeof(header), "-----BEGIN REOP ENCRYPTED MESSAGE-----\n");
+		writeall(fd, header, strlen(header), filename);
+		snprintf(header, sizeof(header), "ident:%s\n", ident);
+		writeall(fd, header, strlen(header), filename);
+		sodium_mlock(b64, sizeof(b64));
+		if (b64_ntop(hdr, hdrlen, b64, sizeof(b64)) == -1)
+			errx(1, "b64 encode failed");
+		writeb64data(fd, filename, b64);
+		sodium_munlock(b64, sizeof(b64));
+
+		snprintf(header, sizeof(header), "-----BEGIN REOP ENCRYPTED MESSAGE DATA-----\n");
+		writeall(fd, header, strlen(header), filename);
+		writeb64data(fd, filename, b64data);
+		xfree(b64data, b64len);
+
+		snprintf(header, sizeof(header), "-----END REOP ENCRYPTED MESSAGE-----\n");
+		writeall(fd, header, strlen(header), filename);
+		close(fd);
+	}
 }
 
 /*
@@ -807,7 +828,8 @@ writeencfile(const char *filename, const void *hdr,
  * ephemeral key version that discards sender key pair
  */
 static void
-ekpubencrypt(const char *pubkeyfile, const char *ident, const char *msgfile, const char *encfile)
+ekpubencrypt(const char *pubkeyfile, const char *ident, const char *msgfile,
+    const char *encfile, opt_binary binary)
 {
 	struct ekcmsg ekcmsg;
 	struct pubkey pubkey;
@@ -829,7 +851,7 @@ ekpubencrypt(const char *pubkeyfile, const char *ident, const char *msgfile, con
 
 	sodium_munlock(&enckey, sizeof(enckey));
 
-	writeencfile(encfile, &ekcmsg, sizeof(ekcmsg), "<ephemeral>", msg, msglen);
+	writeencfile(encfile, &ekcmsg, sizeof(ekcmsg), "<ephemeral>", msg, msglen, binary);
 
 	xfree(msg, msglen);
 }
@@ -840,7 +862,7 @@ ekpubencrypt(const char *pubkeyfile, const char *ident, const char *msgfile, con
  */
 static void
 pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
-    const char *msgfile, const char *encfile)
+    const char *msgfile, const char *encfile, opt_binary binary)
 {
 	char myident[IDENTLEN];
 	struct encmsg encmsg;
@@ -864,7 +886,7 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	pubencryptmsg(msg, msglen, encmsg.box, pubkey.enckey, seckey.enckey);
 	sodium_munlock(&seckey, sizeof(seckey));
 
-	writeencfile(encfile, &encmsg, sizeof(encmsg), myident, msg, msglen);
+	writeencfile(encfile, &encmsg, sizeof(encmsg), myident, msg, msglen, binary);
 
 	xfree(msg, msglen);
 }
@@ -873,7 +895,7 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
  * encrypt a file using symmetric cryptography (a password)
  */
 static void
-symencrypt(const char *msgfile, const char *encfile, int rounds)
+symencrypt(const char *msgfile, const char *encfile, int rounds, opt_binary binary)
 {
 	struct symmsg symmsg;
 	uint8_t symkey[SYMKEYBYTES];
@@ -895,7 +917,7 @@ symencrypt(const char *msgfile, const char *encfile, int rounds)
 	symencryptmsg(msg, msglen, symmsg.box, symkey);
 	sodium_munlock(symkey, sizeof(symkey));
 
-	writeencfile(encfile, &symmsg, sizeof(symmsg), "<symmetric>", msg, msglen);
+	writeencfile(encfile, &symmsg, sizeof(symmsg), "<symmetric>", msg, msglen, binary);
 
 	xfree(msg, msglen);
 }
@@ -921,31 +943,76 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 	struct pubkey pubkey;
 	struct seckey seckey;
 	uint8_t symkey[SYMKEYBYTES];
-	char *begin, *end;
 	int fd, rounds, rv;
-	const char *beginreopmsg = "-----BEGIN REOP ENCRYPTED MESSAGE-----\n";
-	const char *beginreopdata = "-----BEGIN REOP ENCRYPTED MESSAGE DATA-----\n";
-	const char *endreopmsg = "-----END REOP ENCRYPTED MESSAGE-----\n";
 
 	encdata = readall(encfile, &encdatalen);
-	if (strncmp(encdata, beginreopmsg, strlen(beginreopmsg)) != 0)
- 		goto fail;
-	begin = readident(encdata + 39, ident);
-	if (!(end = strstr(begin, beginreopdata)))
- 		goto fail;
-	*end = 0;
-	if ((rv = b64_pton(begin, (void *)&hdr, sizeof(hdr))) == -1)
- 		goto fail;
-	begin = end + 44;
-	if (!(end = strstr(begin, endreopmsg)))
- 		goto fail;
-	*end = 0;
+	if (encdatalen > 6 && memcmp(encdata, "RBF", 4) == 0) {
+		uint8_t *ptr = encdata + 4;
+		uint8_t *endptr = encdata + encdatalen;
+		uint32_t identlen;
 
-	msglen = (strlen(begin) + 3) / 4 * 3 + 1;
-	msg = xmalloc(msglen);
-	msglen = b64_pton(begin, msg, msglen);
-	if (msglen == -1)
- 		goto fail;
+		if (memcmp(ptr, SYMALG, 2) == 0) {
+			rv = sizeof(hdr.symmsg);
+			if (ptr + rv > endptr)
+				goto fail;
+			memcpy(&hdr.symmsg, ptr, rv);
+			ptr += rv;
+		} else if (memcmp(hdr.alg, ENCALG, 2) == 0) {
+			rv = sizeof(hdr.encmsg);
+			if (ptr + rv > endptr)
+				goto fail;
+			memcpy(&hdr.encmsg, ptr, rv);
+			ptr += rv;
+		} else if (memcmp(hdr.alg, EKCALG, 2) == 0) {
+			rv = sizeof(hdr.ekcmsg);
+			if (ptr + rv > endptr)
+				goto fail;
+			memcpy(&hdr.ekcmsg, ptr, rv);
+			ptr += rv;
+		} else {
+			goto fail;
+		}
+		if (ptr + 4 > endptr)
+			goto fail;
+		memcpy(&identlen, ptr, sizeof(identlen));
+		ptr += 4;
+		identlen = ntohl(identlen);
+		if (identlen > sizeof(ident))
+			goto fail;
+		if (ptr + identlen > endptr)
+			goto fail;
+		memcpy(ident, ptr, identlen);
+		ptr += identlen;
+		msg = ptr;
+		msglen = endptr - ptr;
+	} else {
+		char *begin, *end;
+		const char *beginreopmsg = "-----BEGIN REOP ENCRYPTED MESSAGE-----\n";
+		const char *beginreopdata = "-----BEGIN REOP ENCRYPTED MESSAGE DATA-----\n";
+		const char *endreopmsg = "-----END REOP ENCRYPTED MESSAGE-----\n";
+
+
+		if (strncmp(encdata, beginreopmsg, strlen(beginreopmsg)) != 0)
+			goto fail;
+		begin = readident(encdata + 39, ident);
+		if (!(end = strstr(begin, beginreopdata)))
+			goto fail;
+		*end = 0;
+		if ((rv = b64_pton(begin, (void *)&hdr, sizeof(hdr))) == -1)
+			goto fail;
+		begin = end + 44;
+		if (!(end = strstr(begin, endreopmsg)))
+			goto fail;
+		*end = 0;
+
+		msglen = (strlen(begin) + 3) / 4 * 3 + 1;
+		msg = xmalloc(msglen);
+		msglen = b64_pton(begin, msg, msglen);
+		if (msglen == -1)
+			goto fail;
+		free(encdata);
+		encdata = NULL;
+	}
 
 	sodium_mlock(&symkey, sizeof(symkey));
 	sodium_mlock(&seckey, sizeof(seckey));
@@ -988,11 +1055,16 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 
 		pubdecryptmsg(msg, msglen, hdr.ekcmsg.box, hdr.ekcmsg.pubkey, seckey.enckey);
 		sodium_munlock(&seckey, sizeof(seckey));
+	} else {
+		goto fail;
 	}
 	fd = xopen(msgfile, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
 	writeall(fd, msg, msglen, msgfile);
 	close(fd);
-	xfree(msg, msglen);
+	if (encdata)
+		xfree(encdata, encdatalen);
+	else
+		xfree(msg, msglen);
 	return;
 
 fail:
@@ -1011,6 +1083,7 @@ main(int argc, char **argv)
 	int ch, rounds;
 	int embedded = 0;
 	int quiet = 0;
+	opt_binary binary = { 0 };
 	enum {
 		NONE,
 		DECRYPT,
@@ -1023,7 +1096,7 @@ main(int argc, char **argv)
 
 	rounds = 42;
 
-	while ((ch = getopt(argc, argv, "ACDEGSVei:m:np:qs:x:")) != -1) {
+	while ((ch = getopt(argc, argv, "ACDEGSVbei:m:np:qs:x:")) != -1) {
 		switch (ch) {
 		case 'A':
 			if (verb)
@@ -1054,6 +1127,9 @@ main(int argc, char **argv)
 			if (verb)
 				usage(NULL);
 			verb = VERIFY;
+			break;
+		case 'b':
+			binary.v = 1;
 			break;
 		case 'e':
 			embedded = 1;
@@ -1125,15 +1201,15 @@ main(int argc, char **argv)
 		decrypt(pubkeyfile, seckeyfile, msgfile, xfile);
 		break;
 	case EKPUBENCRYPT:
-		ekpubencrypt(pubkeyfile, ident, msgfile, xfile);
+		ekpubencrypt(pubkeyfile, ident, msgfile, xfile, binary);
 		break;
 	case ENCRYPT:
 		if (seckeyfile && (!pubkeyfile && !ident))
 			usage("specify a pubkey or ident");
 		if (pubkeyfile || ident)
-			pubencrypt(pubkeyfile, ident, seckeyfile, msgfile, xfile);
+			pubencrypt(pubkeyfile, ident, seckeyfile, msgfile, xfile, binary);
 		else
-			symencrypt(msgfile, xfile, rounds);
+			symencrypt(msgfile, xfile, rounds, binary);
 		break;
 	case GENERATE:
 		if (!ident && !(ident= getenv("USER")))
