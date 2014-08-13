@@ -56,8 +56,8 @@
 
 /* magic */
 #define SIGALG "Ed"	/* Ed25519 */
-#define ENCALG "CS"	/* Curve25519-Salsa20 */
-#define EKCALG "eS"	/* ephemeral-curve25519-Salsa20 */
+#define OLDENCALG "CS"	/* Curve25519-Salsa20 */
+#define OLDEKCALG "eS"	/* ephemeral-curve25519-Salsa20 */
 #define SYMALG "SP"	/* Salsa20-Poly1305 */
 #define KDFALG "BK"	/* bcrypt kdf */
 #define IDENTLEN 64
@@ -99,14 +99,14 @@ struct symmsg {
 	uint8_t box[SYMNONCEBYTES + SYMBOXBYTES];
 };
 
-struct encmsg {
+struct oldencmsg {
 	uint8_t encalg[2];
 	uint8_t secfingerprint[FPLEN];
 	uint8_t pubfingerprint[FPLEN];
 	uint8_t box[ENCNONCEBYTES + ENCBOXBYTES];
 };
 
-struct ekcmsg {
+struct oldekcmsg {
 	uint8_t ekcalg[2];
 	uint8_t pubfingerprint[FPLEN];
 	uint8_t pubkey[ENCPUBLICBYTES];
@@ -607,7 +607,7 @@ generate(const char *pubkeyfile, const char *seckeyfile, int rounds,
 
 	memcpy(seckey.fingerprint, fingerprint, FPLEN);
 	memcpy(seckey.sigalg, SIGALG, 2);
-	memcpy(seckey.encalg, ENCALG, 2);
+	memcpy(seckey.encalg, OLDENCALG, 2);
 	memcpy(seckey.symalg, SYMALG, 2);
 	memcpy(seckey.kdfalg, KDFALG, 2);
 	seckey.kdfrounds = htonl(rounds);
@@ -625,7 +625,7 @@ generate(const char *pubkeyfile, const char *seckeyfile, int rounds,
 
 	memcpy(pubkey.fingerprint, fingerprint, FPLEN);
 	memcpy(pubkey.sigalg, SIGALG, 2);
-	memcpy(pubkey.encalg, ENCALG, 2);
+	memcpy(pubkey.encalg, OLDENCALG, 2);
 
 	if (!pubkeyfile)
 		pubkeyfile = gethomefile("pubkey");
@@ -831,7 +831,7 @@ static void
 ekpubencrypt(const char *pubkeyfile, const char *ident, const char *msgfile,
     const char *encfile, opt_binary binary)
 {
-	struct ekcmsg ekcmsg;
+	struct oldekcmsg oldekcmsg;
 	struct pubkey pubkey;
 	uint8_t *msg;
 	unsigned long long msglen;
@@ -840,18 +840,18 @@ ekpubencrypt(const char *pubkeyfile, const char *ident, const char *msgfile,
 	getpubkey(pubkeyfile, ident, &pubkey);
 
 	sodium_mlock(&enckey, sizeof(enckey));
-	crypto_box_keypair(ekcmsg.pubkey, enckey);
+	crypto_box_keypair(oldekcmsg.pubkey, enckey);
 
 	msg = readall(msgfile, &msglen);
 
-	memcpy(ekcmsg.ekcalg, EKCALG, 2);
-	memcpy(ekcmsg.pubfingerprint, pubkey.fingerprint, FPLEN);
+	memcpy(oldekcmsg.ekcalg, OLDEKCALG, 2);
+	memcpy(oldekcmsg.pubfingerprint, pubkey.fingerprint, FPLEN);
 
-	pubencryptmsg(msg, msglen, ekcmsg.box, pubkey.enckey, enckey);
+	pubencryptmsg(msg, msglen, oldekcmsg.box, pubkey.enckey, enckey);
 
 	sodium_munlock(&enckey, sizeof(enckey));
 
-	writeencfile(encfile, &ekcmsg, sizeof(ekcmsg), "<ephemeral>", msg, msglen, binary);
+	writeencfile(encfile, &oldekcmsg, sizeof(oldekcmsg), "<ephemeral>", msg, msglen, binary);
 
 	xfree(msg, msglen);
 }
@@ -865,7 +865,7 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
     const char *msgfile, const char *encfile, opt_binary binary)
 {
 	char myident[IDENTLEN];
-	struct encmsg encmsg;
+	struct oldencmsg oldencmsg;
 	struct pubkey pubkey;
 	struct seckey seckey;
 	uint8_t *msg;
@@ -880,13 +880,13 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 
 	msg = readall(msgfile, &msglen);
 
-	memcpy(encmsg.encalg, ENCALG, 2);
-	memcpy(encmsg.pubfingerprint, pubkey.fingerprint, FPLEN);
-	memcpy(encmsg.secfingerprint, seckey.fingerprint, FPLEN);
-	pubencryptmsg(msg, msglen, encmsg.box, pubkey.enckey, seckey.enckey);
+	memcpy(oldencmsg.encalg, OLDENCALG, 2);
+	memcpy(oldencmsg.pubfingerprint, pubkey.fingerprint, FPLEN);
+	memcpy(oldencmsg.secfingerprint, seckey.fingerprint, FPLEN);
+	pubencryptmsg(msg, msglen, oldencmsg.box, pubkey.enckey, seckey.enckey);
 	sodium_munlock(&seckey, sizeof(seckey));
 
-	writeencfile(encfile, &encmsg, sizeof(encmsg), myident, msg, msglen, binary);
+	writeencfile(encfile, &oldencmsg, sizeof(oldencmsg), myident, msg, msglen, binary);
 
 	xfree(msg, msglen);
 }
@@ -937,8 +937,8 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 	union {
 		uint8_t alg[2];
 		struct symmsg symmsg;
-		struct encmsg encmsg;
-		struct ekcmsg ekcmsg;
+		struct oldencmsg oldencmsg;
+		struct oldekcmsg oldekcmsg;
 	} hdr;
 	struct pubkey pubkey;
 	struct seckey seckey;
@@ -957,17 +957,17 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 				goto fail;
 			memcpy(&hdr.symmsg, ptr, rv);
 			ptr += rv;
-		} else if (memcmp(hdr.alg, ENCALG, 2) == 0) {
-			rv = sizeof(hdr.encmsg);
+		} else if (memcmp(hdr.alg, OLDENCALG, 2) == 0) {
+			rv = sizeof(hdr.oldencmsg);
 			if (ptr + rv > endptr)
 				goto fail;
-			memcpy(&hdr.encmsg, ptr, rv);
+			memcpy(&hdr.oldencmsg, ptr, rv);
 			ptr += rv;
-		} else if (memcmp(hdr.alg, EKCALG, 2) == 0) {
-			rv = sizeof(hdr.ekcmsg);
+		} else if (memcmp(hdr.alg, OLDEKCALG, 2) == 0) {
+			rv = sizeof(hdr.oldekcmsg);
 			if (ptr + rv > endptr)
 				goto fail;
-			memcpy(&hdr.ekcmsg, ptr, rv);
+			memcpy(&hdr.oldekcmsg, ptr, rv);
 			ptr += rv;
 		} else {
 			goto fail;
@@ -1029,31 +1029,31 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		    allowstdin, confirm, symkey, sizeof(symkey));
 		symdecryptmsg(msg, msglen, hdr.symmsg.box, symkey);
 		sodium_munlock(symkey, sizeof(symkey));
-	} else if (memcmp(hdr.alg, ENCALG, 2) == 0) {
+	} else if (memcmp(hdr.alg, OLDENCALG, 2) == 0) {
 		kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
-		if (rv != sizeof(hdr.encmsg))
+		if (rv != sizeof(hdr.oldencmsg))
 			goto fail;
 		getpubkey(pubkeyfile, ident, &pubkey);
 		getseckey(seckeyfile, &seckey, NULL, allowstdin);
 		/* pub/sec pairs work both ways */
-		if (memcmp(hdr.encmsg.pubfingerprint, pubkey.fingerprint, FPLEN) == 0) {
-			if (memcmp(hdr.encmsg.secfingerprint, seckey.fingerprint, FPLEN) != 0)
+		if (memcmp(hdr.oldencmsg.pubfingerprint, pubkey.fingerprint, FPLEN) == 0) {
+			if (memcmp(hdr.oldencmsg.secfingerprint, seckey.fingerprint, FPLEN) != 0)
 				goto fpfail;
-		} else if (memcmp(hdr.encmsg.pubfingerprint, seckey.fingerprint, FPLEN) != 0 ||
-		    memcmp(hdr.encmsg.pubfingerprint, seckey.fingerprint, FPLEN) != 0)
+		} else if (memcmp(hdr.oldencmsg.pubfingerprint, seckey.fingerprint, FPLEN) != 0 ||
+		    memcmp(hdr.oldencmsg.pubfingerprint, seckey.fingerprint, FPLEN) != 0)
 			goto fpfail;
 
-		pubdecryptmsg(msg, msglen, hdr.encmsg.box, pubkey.enckey, seckey.enckey);
+		pubdecryptmsg(msg, msglen, hdr.oldencmsg.box, pubkey.enckey, seckey.enckey);
 		sodium_munlock(&seckey, sizeof(seckey));
-	} else if (memcmp(hdr.alg, EKCALG, 2) == 0) {
+	} else if (memcmp(hdr.alg, OLDEKCALG, 2) == 0) {
 		kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
-		if (rv != sizeof(hdr.ekcmsg))
+		if (rv != sizeof(hdr.oldekcmsg))
 			goto fail;
 		getseckey(seckeyfile, &seckey, NULL, allowstdin);
-		if (memcmp(hdr.ekcmsg.pubfingerprint, seckey.fingerprint, FPLEN) != 0)
+		if (memcmp(hdr.oldekcmsg.pubfingerprint, seckey.fingerprint, FPLEN) != 0)
 			goto fpfail;
 
-		pubdecryptmsg(msg, msglen, hdr.ekcmsg.box, hdr.ekcmsg.pubkey, seckey.enckey);
+		pubdecryptmsg(msg, msglen, hdr.oldekcmsg.box, hdr.oldekcmsg.pubkey, seckey.enckey);
 		sodium_munlock(&seckey, sizeof(seckey));
 	} else {
 		goto fail;
