@@ -17,7 +17,7 @@ even add all your pals to ~/.reop/pubkeyring and verify their messages
 automatically, just like a normal PGP program.
 
 Supported operations include signing -S and verifying -V messages, plus a
-variety of options for encrypting messages (-A -D -E). It does everything you’d
+variety of options for encrypting messages (-D -E). It does everything you’d
 expect a PGP program to do. More accurately, it does everything I expect you
 to expect a PGP program to do. I may be wrong, but it kills me to see people
 reaching for the gpg or openssl hammer of infinite possibilities for the
@@ -75,7 +75,7 @@ reop uses crypto_sign (Ed25519), crypto_box (Curve25519, Salsa20, and Poly1305)
 and crypto_secretbox (Salsa20 and Poly1305). I have not personally vetted these
 functions. Internet told me they were safe.
 
-One thing to note is that the crypto_box construction (reop -E) may not behave
+One thing to note is that the crypto_box construction may not behave
 like other public key encryption schemes you are familiar with. It takes two
 key pairs; the receiver’s public key as expected and the sender’s secret key,
 which offers a measure of authentication.
@@ -88,12 +88,12 @@ secAlice and pubBob work just as well to decrypt. If you were expecting to
 encrypt some secret with a public key and then have that computer “forget” how
 to access the secret, that won’t work.
 
-reop works around this by introducing the -A (asymmetric? anonymous?) option,
-which creates an ephemeral key pair for the sender. The sender public key is
-embedded in the message; the sender secret key is thrown away; and now only
-the recipient with the recipient’s secret key can decrypt the data. However,
-now you lose authentication. If that matters, you can sign the result, but for
-now you have to compose the operations manually.
+reop used to work around this half-assedly. Now the workaround is at least
+3/4-assed. An ephemeral key is generated. The meat of the message is encrypted
+with secEph and pubBob. Then secEph is discarded. Now only pubEph and secBob
+can decrypt. To authenticate the message, we encrypt pubEph with secAlice
+and pubBob. Bob can authenticate the message with secBob and pubAlice, but he
+could also have forged the message, giving Alice deniability.
 
 Nonces, where necessary, are generated randomly.
 
