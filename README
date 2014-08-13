@@ -95,6 +95,10 @@ can decrypt. To authenticate the message, we encrypt pubEph with secAlice
 and pubBob. Bob can authenticate the message with secBob and pubAlice, but he
 could also have forged the message, giving Alice deniability.
 
+This is something like what Noise Boxes would do, but which pub keys get
+encrypted are swapped. (reop doesn’t hide sender identity.)
+https://github.com/trevp/noise/wiki/Boxes
+
 Nonces, where necessary, are generated randomly.
 
 [The next two paragraphs are a little dated;
