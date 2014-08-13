@@ -56,6 +56,7 @@
 
 /* magic */
 #define SIGALG "Ed"	/* Ed25519 */
+#define ENCALG "eC"	/* ephemeral Curve25519-Salsa20 */
 #define OLDENCALG "CS"	/* Curve25519-Salsa20 */
 #define OLDEKCALG "eS"	/* ephemeral-curve25519-Salsa20 */
 #define SYMALG "SP"	/* Salsa20-Poly1305 */
@@ -99,6 +100,15 @@ struct symmsg {
 	uint8_t box[SYMNONCEBYTES + SYMBOXBYTES];
 };
 
+struct encmsg {
+	uint8_t encalg[2];
+	uint8_t secfingerprint[FPLEN];
+	uint8_t pubfingerprint[FPLEN];
+	uint8_t ephpubkey[ENCPUBLICBYTES];
+	uint8_t ephbox[ENCNONCEBYTES + ENCBOXBYTES];
+	uint8_t box[ENCNONCEBYTES + ENCBOXBYTES];
+};
+
 struct oldencmsg {
 	uint8_t encalg[2];
 	uint8_t secfingerprint[FPLEN];
@@ -121,7 +131,6 @@ usage(const char *error)
 		fprintf(stderr, "%s\n", error);
 	fprintf(stderr, "usage:"
 	    "\treop -G [-n] [-i ident] [-p pubkey -s seckey]\n"
-	    "\treop -A [-i ident] [-p pubkey -s seckey] -m message [-x encfile]\n"
 	    "\treop -D [-i ident] [-p pubkey -s seckey] -m message [-x encfile]\n"
 	    "\treop -E [-i ident] [-p pubkey -s seckey] -m message [-x encfile]\n"
 	    "\treop -S [-e] [-x sigfile] -s seckey -m message\n"
@@ -825,53 +834,23 @@ writeencfile(const char *filename, const void *hdr,
 
 /*
  * encrypt a file using public key cryptography
- * ephemeral key version that discards sender key pair
- */
-static void
-ekpubencrypt(const char *pubkeyfile, const char *ident, const char *msgfile,
-    const char *encfile, opt_binary binary)
-{
-	struct oldekcmsg oldekcmsg;
-	struct pubkey pubkey;
-	uint8_t *msg;
-	unsigned long long msglen;
-	uint8_t enckey[ENCSECRETBYTES];
-
-	getpubkey(pubkeyfile, ident, &pubkey);
-
-	sodium_mlock(&enckey, sizeof(enckey));
-	crypto_box_keypair(oldekcmsg.pubkey, enckey);
-
-	msg = readall(msgfile, &msglen);
-
-	memcpy(oldekcmsg.ekcalg, OLDEKCALG, 2);
-	memcpy(oldekcmsg.pubfingerprint, pubkey.fingerprint, FPLEN);
-
-	pubencryptmsg(msg, msglen, oldekcmsg.box, pubkey.enckey, enckey);
-
-	sodium_munlock(&enckey, sizeof(enckey));
-
-	writeencfile(encfile, &oldekcmsg, sizeof(oldekcmsg), "<ephemeral>", msg, msglen, binary);
-
-	xfree(msg, msglen);
-}
-
-/*
- * encrypt a file using public key cryptography
- * authenticated secret key version
+ * an ephemeral key is used to make the encryption one way
+ * that key is then encrypted with our seckey to provide authentication
  */
 static void
 pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
     const char *msgfile, const char *encfile, opt_binary binary)
 {
 	char myident[IDENTLEN];
-	struct oldencmsg oldencmsg;
+	struct encmsg encmsg;
 	struct pubkey pubkey;
 	struct seckey seckey;
+	uint8_t ephseckey[ENCSECRETBYTES];
 	uint8_t *msg;
 	unsigned long long msglen;
 	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 
+	sodium_mlock(&ephseckey, sizeof(ephseckey));
 	sodium_mlock(&seckey, sizeof(seckey));
 
 	getpubkey(pubkeyfile, ident, &pubkey);
@@ -880,13 +859,19 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 
 	msg = readall(msgfile, &msglen);
 
-	memcpy(oldencmsg.encalg, OLDENCALG, 2);
-	memcpy(oldencmsg.pubfingerprint, pubkey.fingerprint, FPLEN);
-	memcpy(oldencmsg.secfingerprint, seckey.fingerprint, FPLEN);
-	pubencryptmsg(msg, msglen, oldencmsg.box, pubkey.enckey, seckey.enckey);
-	sodium_munlock(&seckey, sizeof(seckey));
+	memcpy(encmsg.encalg, ENCALG, 2);
+	memcpy(encmsg.pubfingerprint, pubkey.fingerprint, FPLEN);
+	memcpy(encmsg.secfingerprint, seckey.fingerprint, FPLEN);
+	crypto_box_keypair(encmsg.ephpubkey, ephseckey);
 
-	writeencfile(encfile, &oldencmsg, sizeof(oldencmsg), myident, msg, msglen, binary);
+	pubencryptmsg(msg, msglen, encmsg.box, pubkey.enckey, ephseckey);
+
+	pubencryptmsg(encmsg.ephpubkey, sizeof(encmsg.ephpubkey), encmsg.ephbox, pubkey.enckey, seckey.enckey);
+
+	sodium_munlock(&seckey, sizeof(seckey));
+	sodium_munlock(&ephseckey, sizeof(ephseckey));
+
+	writeencfile(encfile, &encmsg, sizeof(encmsg), myident, msg, msglen, binary);
 
 	xfree(msg, msglen);
 }
@@ -937,6 +922,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 	union {
 		uint8_t alg[2];
 		struct symmsg symmsg;
+		struct encmsg encmsg;
 		struct oldencmsg oldencmsg;
 		struct oldekcmsg oldekcmsg;
 	} hdr;
@@ -1029,11 +1015,23 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		    allowstdin, confirm, symkey, sizeof(symkey));
 		symdecryptmsg(msg, msglen, hdr.symmsg.box, symkey);
 		sodium_munlock(symkey, sizeof(symkey));
+	} else if (memcmp(hdr.alg, ENCALG, 2) == 0) {
+		kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
+		if (rv != sizeof(hdr.encmsg))
+			goto fail;
+		getpubkey(pubkeyfile, ident, &pubkey);
+		getseckey(seckeyfile, &seckey, NULL, allowstdin);
+		if (memcmp(hdr.encmsg.pubfingerprint, seckey.fingerprint, FPLEN) != 0 ||
+		    memcmp(hdr.encmsg.secfingerprint, pubkey.fingerprint, FPLEN) != 0)
+			goto fpfail;
+
+		pubdecryptmsg(hdr.encmsg.ephpubkey, sizeof(hdr.encmsg.ephpubkey), hdr.encmsg.ephbox, pubkey.enckey, seckey.enckey);
+		pubdecryptmsg(msg, msglen, hdr.encmsg.box, hdr.encmsg.ephpubkey, seckey.enckey);
+		sodium_munlock(&seckey, sizeof(seckey));
 	} else if (memcmp(hdr.alg, OLDENCALG, 2) == 0) {
 		kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 		if (rv != sizeof(hdr.oldencmsg))
 			goto fail;
-		getpubkey(pubkeyfile, ident, &pubkey);
 		getseckey(seckeyfile, &seckey, NULL, allowstdin);
 		/* pub/sec pairs work both ways */
 		if (memcmp(hdr.oldencmsg.pubfingerprint, pubkey.fingerprint, FPLEN) == 0) {
@@ -1087,7 +1085,6 @@ main(int argc, char **argv)
 	enum {
 		NONE,
 		DECRYPT,
-		EKPUBENCRYPT,
 		ENCRYPT,
 		GENERATE,
 		SIGN,
@@ -1096,13 +1093,8 @@ main(int argc, char **argv)
 
 	rounds = 42;
 
-	while ((ch = getopt(argc, argv, "ACDEGSVbei:m:np:qs:x:")) != -1) {
+	while ((ch = getopt(argc, argv, "CDEGSVbei:m:np:qs:x:")) != -1) {
 		switch (ch) {
-		case 'A':
-			if (verb)
-				usage(NULL);
-			verb = EKPUBENCRYPT;
-			break;
 		case 'D':
 			if (verb)
 				usage(NULL);
@@ -1167,7 +1159,6 @@ main(int argc, char **argv)
 		usage(NULL);
 
 	switch (verb) {
-	case EKPUBENCRYPT:
 	case ENCRYPT:
 	case DECRYPT:
 		if (!msgfile)
@@ -1199,9 +1190,6 @@ main(int argc, char **argv)
 	switch (verb) {
 	case DECRYPT:
 		decrypt(pubkeyfile, seckeyfile, msgfile, xfile);
-		break;
-	case EKPUBENCRYPT:
-		ekpubencrypt(pubkeyfile, ident, msgfile, xfile, binary);
 		break;
 	case ENCRYPT:
 		if (seckeyfile && (!pubkeyfile && !ident))

@@ -20,10 +20,6 @@
 .Nd reasonable expectation of privacy
 .Sh SYNOPSIS
 .Nm reop
-.Fl A
-.Op Fl i Ar ident
-.Fl p Ar pubkey
-.Nm reop
 .Fl D
 .Fl x Ar encfile
 .Nm reop
@@ -52,10 +48,6 @@ utility creates and verifies cryptographic signatures and encrypts and
 decrypts files.
 The mode of operation is selected with the following options:
 .Bl -tag -width Dsssigfile
-.It Fl A
-Assymetric one way encryption.
-Encrypt a message using the specified public key and an ephemeral
-secret key.
 .It Fl D
 Decryption, both public key and symmetric.
 .It Fl E
@@ -67,8 +59,8 @@ When run with a public key, will encrypt the message so that it can be
 decrypted by the matching secret key.
 Public key encryption also uses encryptor's secret key to authenticate the
 message.
-Note that the same two keys used to encrypt a message can also be used
-to decrypt it; this construct is not strictly one way.
+Once encrypted, the message can only be decrypted by recipient's secret key.
+Although authenticated, messages are deniable (forgeable by recipient).
 .It Fl G
 Generate a new key pair.
 .It Fl S
