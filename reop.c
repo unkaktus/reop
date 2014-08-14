@@ -124,6 +124,10 @@ struct oldekcmsg {
 };
 
 /* utility */
+typedef struct { int v; } kdf_allowstdin;
+typedef struct { int v; } kdf_confirm;
+typedef struct { int v; } opt_binary;
+
 static void
 usage(const char *error)
 {
@@ -138,11 +142,6 @@ usage(const char *error)
 	    );
 	exit(1);
 }
-
-typedef struct { int v; } kdf_allowstdin;
-typedef struct { int v; } kdf_confirm;
-typedef struct { int v; } opt_binary;
-
 
 static int
 xopen(const char *fname, int oflags, mode_t mode)
