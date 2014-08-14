@@ -957,13 +957,13 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 				goto fail;
 			memcpy(&hdr.symmsg, ptr, rv);
 			ptr += rv;
-		} else if (memcmp(hdr.alg, ENCALG, 2) == 0) {
+		} else if (memcmp(ptr, ENCALG, 2) == 0) {
 			rv = sizeof(hdr.encmsg);
 			if (ptr + rv > endptr)
 				goto fail;
 			memcpy(&hdr.encmsg, ptr, rv);
 			ptr += rv;
-		} else if (memcmp(hdr.alg, EKCALG, 2) == 0) {
+		} else if (memcmp(ptr, EKCALG, 2) == 0) {
 			rv = sizeof(hdr.ekcmsg);
 			if (ptr + rv > endptr)
 				goto fail;
