@@ -972,13 +972,13 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 
 		if (strncmp(encdata, beginreopmsg, strlen(beginreopmsg)) != 0)
 			goto fail;
-		begin = readident(encdata + 39, ident);
+		begin = readident(encdata + strlen(beginreopmsg), ident);
 		if (!(end = strstr(begin, beginreopdata)))
 			goto fail;
 		*end = 0;
 		if ((rv = b64_pton(begin, (void *)&hdr, sizeof(hdr))) == -1)
 			goto fail;
-		begin = end + 44;
+		begin = end + strlen(beginreopdata);
 		if (!(end = strstr(begin, endreopmsg)))
 			goto fail;
 		*end = 0;
