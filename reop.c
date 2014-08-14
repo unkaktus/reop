@@ -63,6 +63,7 @@
 #define KDFALG "BK"	/* bcrypt kdf */
 #define IDENTLEN 64
 #define FPLEN 8
+#define REOP_BINARY "RBF"
 
 /* metadata */
 struct seckey {
@@ -784,7 +785,7 @@ writeencfile(const char *filename, const void *hdr,
 
 		fd = xopen(filename, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
 
-		writeall(fd, "RBF", 4, filename);
+		writeall(fd, REOP_BINARY, 4, filename);
 		writeall(fd, hdr, hdrlen, filename);
 		writeall(fd, &identlen, sizeof(identlen), filename);
 		writeall(fd, ident, strlen(ident), filename);
@@ -918,7 +919,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 	int fd, rounds, rv;
 
 	encdata = readall(encfile, &encdatalen);
-	if (encdatalen > 6 && memcmp(encdata, "RBF", 4) == 0) {
+	if (encdatalen > 6 && memcmp(encdata, REOP_BINARY, 4) == 0) {
 		uint8_t *ptr = encdata + 4;
 		uint8_t *endptr = encdata + encdatalen;
 		uint32_t identlen;
