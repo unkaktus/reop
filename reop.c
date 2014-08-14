@@ -463,7 +463,7 @@ findpubkey(const char *ident)
 	if (!done) {
 		char line[1024];
 		char buf[1024];
-		int identline;
+		int maxkeys = 0, identline;
 		FILE *fp;
 		
 		done = 1;
@@ -478,8 +478,11 @@ findpubkey(const char *ident)
 				continue;
 			if (strncmp(line, beginreop, strlen(beginreop)) != 0)
 				errx(1, "invalid keyring line: %s", line);
-			if (!(keys = realloc(keys, sizeof(*keys) * (numkeys + 1))))
-				err(1, "realloc keyring");
+			if (numkeys == maxkeys) {
+				maxkeys = maxkeys ? maxkeys * 2 : 4;
+				if (!(keys = realloc(keys, sizeof(*keys) * maxkeys)))
+					err(1, "realloc keyring");
+			}
 			while (1) {
 				if (!fgets(line, sizeof(line), fp))
 					errx(1, "premature pubkeyring EOF");
