@@ -943,13 +943,19 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 				goto fail;
 			memcpy(&hdr.symmsg, ptr, rv);
 			ptr += rv;
-		} else if (memcmp(hdr.alg, OLDENCALG, 2) == 0) {
+		} else if (memcmp(ptr, ENCALG, 2) == 0) {
+			rv = sizeof(hdr.encmsg);
+			if (ptr + rv > endptr)
+				goto fail;
+			memcpy(&hdr.encmsg, ptr, rv);
+			ptr += rv;
+		} else if (memcmp(ptr, OLDENCALG, 2) == 0) {
 			rv = sizeof(hdr.oldencmsg);
 			if (ptr + rv > endptr)
 				goto fail;
 			memcpy(&hdr.oldencmsg, ptr, rv);
 			ptr += rv;
-		} else if (memcmp(hdr.alg, OLDEKCALG, 2) == 0) {
+		} else if (memcmp(ptr, OLDEKCALG, 2) == 0) {
 			rv = sizeof(hdr.oldekcmsg);
 			if (ptr + rv > endptr)
 				goto fail;
