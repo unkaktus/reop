@@ -99,6 +99,11 @@ This is something like what Noise Boxes would do, but which pub keys get
 encrypted are swapped. (reop doesn’t hide sender identity.)
 https://github.com/trevp/noise/wiki/Boxes
 
+While it's possible to do things the other way around and try to provide
+sender confidentiality, I'm not sure it's a good fit for reop. It doesn't
+align with how the tool is likely to be used, and sender identity will most
+likely leak some other way. Better IMO to simply not make that promise.
+
 Nonces, where necessary, are generated randomly.
 
 [The next two paragraphs are a little dated;
