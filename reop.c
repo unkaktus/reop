@@ -137,7 +137,7 @@ usage(const char *error)
 	fprintf(stderr, "usage:"
 	    "\treop -G [-n] [-i ident] [-p pubkey -s seckey]\n"
 	    "\treop -D [-i ident] [-p pubkey -s seckey] -m message [-x encfile]\n"
-	    "\treop -E [-i ident] [-p pubkey -s seckey] -m message [-x encfile]\n"
+	    "\treop -E [-1b] [-i ident] [-p pubkey -s seckey] -m message [-x encfile]\n"
 	    "\treop -S [-e] [-x sigfile] -s seckey -m message\n"
 	    "\treop -V [-eq] [-x sigfile] -p pubkey -m message\n"
 	    );
@@ -865,6 +865,41 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 }
 
 /*
+ * encrypt a file using public key cryptography
+ * old version 1.0 variant
+ */
+static void
+v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
+    const char *msgfile, const char *encfile, opt_binary binary)
+{
+	char myident[IDENTLEN];
+	struct oldencmsg oldencmsg;
+	struct pubkey pubkey;
+	struct seckey seckey;
+	uint8_t *msg;
+	unsigned long long msglen;
+	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
+
+	sodium_mlock(&seckey, sizeof(seckey));
+
+	getpubkey(pubkeyfile, ident, &pubkey);
+
+	getseckey(seckeyfile, &seckey, myident, allowstdin);
+
+	msg = readall(msgfile, &msglen);
+
+	memcpy(oldencmsg.encalg, OLDENCALG, 2);
+	memcpy(oldencmsg.pubfingerprint, pubkey.fingerprint, FPLEN);
+	memcpy(oldencmsg.secfingerprint, seckey.fingerprint, FPLEN);
+	pubencryptmsg(msg, msglen, oldencmsg.box, pubkey.enckey, seckey.enckey);
+	sodium_munlock(&seckey, sizeof(seckey));
+
+	writeencfile(encfile, &oldencmsg, sizeof(oldencmsg), myident, msg, msglen, binary);
+
+	xfree(msg, msglen);
+}
+
+/*
  * encrypt a file using symmetric cryptography (a password)
  */
 static void
@@ -1070,6 +1105,7 @@ main(int argc, char **argv)
 	int ch, rounds;
 	int embedded = 0;
 	int quiet = 0;
+	int v1compat = 0;
 	opt_binary binary = { 0 };
 	enum {
 		NONE,
@@ -1082,8 +1118,11 @@ main(int argc, char **argv)
 
 	rounds = 42;
 
-	while ((ch = getopt(argc, argv, "CDEGSVbei:m:np:qs:x:")) != -1) {
+	while ((ch = getopt(argc, argv, "1CDEGSVbei:m:np:qs:x:")) != -1) {
 		switch (ch) {
+		case '1':
+			v1compat = 1;
+			break;
 		case 'D':
 			if (verb)
 				usage(NULL);
@@ -1183,9 +1222,12 @@ main(int argc, char **argv)
 	case ENCRYPT:
 		if (seckeyfile && (!pubkeyfile && !ident))
 			usage("specify a pubkey or ident");
-		if (pubkeyfile || ident)
-			pubencrypt(pubkeyfile, ident, seckeyfile, msgfile, xfile, binary);
-		else
+		if (pubkeyfile || ident) {
+			if (v1compat)
+				v1pubencrypt(pubkeyfile, ident, seckeyfile, msgfile, xfile, binary);
+			else
+				pubencrypt(pubkeyfile, ident, seckeyfile, msgfile, xfile, binary);
+		} else
 			symencrypt(msgfile, xfile, rounds, binary);
 		break;
 	case GENERATE:
