@@ -1057,6 +1057,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 		if (rv != sizeof(hdr.oldencmsg))
 			goto fail;
+		getpubkey(pubkeyfile, ident, &pubkey);
 		getseckey(seckeyfile, &seckey, NULL, allowstdin);
 		/* pub/sec pairs work both ways */
 		if (memcmp(hdr.oldencmsg.pubfingerprint, pubkey.fingerprint, FPLEN) == 0) {
