@@ -218,7 +218,7 @@ symdecryptmsg(uint8_t *buf, unsigned long long msglen, const uint8_t *box,
 {
 	if (crypto_secretbox_open_detached(buf, buf, box + SYMNONCEBYTES,
 	    msglen, box, symkey) == -1)
-		errx(1, "decryption failed");
+		errx(1, "sym decryption failed");
 }
 
 /*
@@ -246,7 +246,7 @@ pubdecryptmsg(uint8_t *buf, unsigned long long msglen, uint8_t *box,
 {
 	if (crypto_box_open_detached(buf, buf, box + ENCNONCEBYTES,
 	    msglen, box, pubkey, seckey) == -1)
-		errx(1, "decryption failed");
+		errx(1, "pub decryption failed");
 }
 
 /*
