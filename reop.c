@@ -986,10 +986,10 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		} else {
 			goto fail;
 		}
-		if (ptr + 4 > endptr)
+		if (ptr + sizeof(identlen) > endptr)
 			goto fail;
 		memcpy(&identlen, ptr, sizeof(identlen));
-		ptr += 4;
+		ptr += sizeof(identlen);
 		identlen = ntohl(identlen);
 		if (identlen > sizeof(ident))
 			goto fail;
