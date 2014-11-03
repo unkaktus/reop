@@ -1028,8 +1028,9 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		encdata = NULL;
 	}
 
+	kdf_allowstdin allowstdin = { strcmp(encfile, "-") != 0 };
+
 	if (memcmp(hdr.alg, SYMALG, 2) == 0) {
-		kdf_allowstdin allowstdin = { strcmp(encfile, "-") != 0 };
 		kdf_confirm confirm = { 0 };
 		if (rv != sizeof(hdr.symmsg))
  			goto fail;
@@ -1041,7 +1042,6 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		symdecryptmsg(msg, msglen, hdr.symmsg.box, symkey);
 		sodium_memzero(symkey, sizeof(symkey));
 	} else if (memcmp(hdr.alg, ENCALG, 2) == 0) {
-		kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 		if (rv != sizeof(hdr.encmsg))
 			goto fail;
 		getpubkey(pubkeyfile, ident, &pubkey);
@@ -1054,7 +1054,6 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		pubdecryptmsg(msg, msglen, hdr.encmsg.box, hdr.encmsg.ephpubkey, seckey.enckey);
 		sodium_memzero(&seckey, sizeof(seckey));
 	} else if (memcmp(hdr.alg, OLDENCALG, 2) == 0) {
-		kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 		if (rv != sizeof(hdr.oldencmsg))
 			goto fail;
 		getpubkey(pubkeyfile, ident, &pubkey);
@@ -1070,7 +1069,6 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		pubdecryptmsg(msg, msglen, hdr.oldencmsg.box, pubkey.enckey, seckey.enckey);
 		sodium_memzero(&seckey, sizeof(seckey));
 	} else if (memcmp(hdr.alg, OLDEKCALG, 2) == 0) {
-		kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 		if (rv != sizeof(hdr.oldekcmsg))
 			goto fail;
 		getseckey(seckeyfile, &seckey, NULL, allowstdin);
