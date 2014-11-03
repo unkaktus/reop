@@ -386,25 +386,30 @@ readident(char *buf, char *ident)
 static void
 readkeyfile(const char *filename, void *key, size_t keylen, char *ident)
 {
-	char *keydata;
-	unsigned long long keydatalen;
-	char *begin, *end;
 	const char *beginreop = "-----BEGIN REOP";
 	const char *endreop = "-----END REOP";
+	unsigned long long keydatalen;
 
-	keydata = readall(filename, &keydatalen);
-	if (strncmp(keydata, beginreop, strlen(beginreop)) != 0 ||
-	    !(end = strstr(keydata, endreop)))
-		errx(1, "invalid key: %s", filename);
+	char *keydata = readall(filename, &keydatalen);
+	if (strncmp(keydata, beginreop, strlen(beginreop)) != 0)
+		goto invalid;
+	char *end;
+	if (!(end = strstr(keydata, endreop)))
+		goto invalid;
 	*end = 0;
+	char *begin;
 	if (!(begin = strchr(keydata, '\n')))
-		errx(1, "invalid key: %s", filename);
+		goto invalid;
 	begin = readident(begin + 1, ident);
 	*end = 0;
 	if (b64_pton(begin, key, keylen) != keylen)
 		errx(1, "invalid b64 encoding: %s", filename);
 
 	xfree(keydata, keydatalen);
+	return;
+
+invalid:
+	errx(1, "invalid key: %s", filename);
 }
 /*
  * generate a symmetric encryption key.
@@ -457,24 +462,22 @@ findpubkey(const char *ident)
 	} *keys;
 	static int numkeys;
 	static int done;
-	int i;
 	const char *beginreop = "-----BEGIN REOP PUBLIC KEY-----\n";
 	const char *endreop = "-----END REOP PUBLIC KEY-----\n";
 
 	if (!done) {
 		char line[1024];
 		char buf[1024];
-		int maxkeys = 0, identline;
-		FILE *fp;
+		int maxkeys = 0;
 		
 		done = 1;
-		fp = fopen(gethomefile("pubkeyring"), "r");
+		FILE *fp = fopen(gethomefile("pubkeyring"), "r");
 		if (!fp)
 			return NULL;
 
 		while (fgets(line, sizeof(line), fp)) {
 			buf[0] = 0;
-			identline = 1;
+			int identline = 1;
 			if (line[0] == 0 || line[0] == '\n')
 				continue;
 			if (strncmp(line, beginreop, strlen(beginreop)) != 0)
@@ -503,7 +506,7 @@ findpubkey(const char *ident)
 				errx(1, "too many keys");
 		}
 	}
-	for (i = 0; i < numkeys; i++) {
+	for (int i = 0; i < numkeys; i++) {
 		if (strcmp(ident, keys[i].ident) == 0)
 			return &keys[i].pubkey;
 	}
@@ -545,15 +548,13 @@ getseckey(const char *seckeyfile, struct seckey *seckey, char *ident,
 	uint8_t symkey[SYMKEYBYTES];
 	kdf_confirm confirm = { 0 };
 
-	int rounds;
-
 	if (!seckeyfile)
 		seckeyfile = gethomefile("seckey");
 
 	readkeyfile(seckeyfile, seckey, sizeof(*seckey), ident ? ident : dummyident);
 	if (memcmp(seckey->kdfalg, KDFALG, 2) != 0)
 		errx(1, "unsupported KDF");
-	rounds = ntohl(seckey->kdfrounds);
+	int rounds = ntohl(seckey->kdfrounds);
 	kdf(seckey->salt, sizeof(seckey->salt), rounds,
 	    allowstdin, confirm, symkey, sizeof(symkey));
 	symdecryptmsg(seckey->sigkey, sizeof(seckey->sigkey) + sizeof(seckey->enckey),
@@ -777,13 +778,10 @@ writeencfile(const char *filename, const void *hdr,
     opt_binary binary)
 {
 	if (binary.v) {
-		int fd;
-		uint32_t identlen;
-
-		identlen = strlen(ident);
+		uint32_t identlen = strlen(ident);
 		identlen = htonl(identlen);
 
-		fd = xopen(filename, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
+		int fd = xopen(filename, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
 
 		writeall(fd, REOP_BINARY, 4, filename);
 		writeall(fd, hdr, hdrlen, filename);
@@ -794,16 +792,13 @@ writeencfile(const char *filename, const void *hdr,
 	} else {
 		char header[1024];
 		char b64[1024];
-		char *b64data;
-		size_t b64len;
-		int fd;
 
-		b64len = (msglen + 2) / 3 * 4 + 1;
-		b64data = xmalloc(b64len);
+		size_t b64len = (msglen + 2) / 3 * 4 + 1;
+		char *b64data = xmalloc(b64len);
 		if (b64_ntop(msg, msglen, b64data, b64len) == -1)
 			errx(1, "b64 encode failed");
 
-		fd = xopen(filename, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
+		int fd = xopen(filename, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
 		snprintf(header, sizeof(header), "-----BEGIN REOP ENCRYPTED MESSAGE-----\n");
 		writeall(fd, header, strlen(header), filename);
 		snprintf(header, sizeof(header), "ident:%s\n", ident);
@@ -951,7 +946,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 	struct pubkey pubkey;
 	struct seckey seckey;
 	uint8_t symkey[SYMKEYBYTES];
-	int fd, rounds, rv;
+	int rv;
 
 	encdata = readall(encfile, &encdatalen);
 	if (encdatalen > 6 && memcmp(encdata, REOP_BINARY, 4) == 0) {
@@ -1036,7 +1031,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
  			goto fail;
 		if (memcmp(hdr.symmsg.kdfalg, KDFALG, 2) != 0)
 			errx(1, "unsupported KDF");
-		rounds = ntohl(hdr.symmsg.kdfrounds);
+		int rounds = ntohl(hdr.symmsg.kdfrounds);
 		kdf(hdr.symmsg.salt, sizeof(hdr.symmsg.salt), rounds,
 		    allowstdin, confirm, symkey, sizeof(symkey));
 		symdecryptmsg(msg, msglen, hdr.symmsg.box, symkey);
@@ -1079,7 +1074,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 	} else {
 		goto fail;
 	}
-	fd = xopen(msgfile, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
+	int fd = xopen(msgfile, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
 	writeall(fd, msg, msglen, msgfile);
 	close(fd);
 	if (encdata)

@@ -1,5 +1,5 @@
 CPPFLAGS= -I/usr/local/include
-CFLAGS=	-Wall -Werror -O2
+CFLAGS=	-std=c99 -Wall -Werror -O2
 LDADD=	-lutil -L/usr/local/lib -lsodium
 
 SRCS=	reop.c

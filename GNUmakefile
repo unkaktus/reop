@@ -1,5 +1,5 @@
 CPPFLAGS= -I/usr/local/include -I/opt/local/include -Iother
-CFLAGS=   -Wall -Werror -Wno-pointer-sign -Wno-unused-result -O2
+CFLAGS=   -std=c99 -Wall -Werror -Wno-pointer-sign -Wno-unused-result -O2
 LDFLAGS=  -L/usr/local/lib -L/opt/local/lib -lsodium
 
 ifeq ($(shell uname -s),Darwin)
