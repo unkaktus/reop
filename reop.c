@@ -36,6 +36,8 @@
 
 #include <sodium.h>
 
+#include "reop.h"
+
 /* shorter names */
 #define SIGBYTES crypto_sign_ed25519_BYTES
 #define SIGSECRETBYTES crypto_sign_ed25519_SECRETKEYBYTES
@@ -125,25 +127,6 @@ struct oldekcmsg {
 };
 
 /* utility */
-typedef struct { int v; } kdf_allowstdin;
-typedef struct { int v; } kdf_confirm;
-typedef struct { int v; } opt_binary;
-
-static void
-usage(const char *error)
-{
-	if (error)
-		fprintf(stderr, "%s\n", error);
-	fprintf(stderr, "usage:"
-	    "\treop -G [-n] [-i ident] [-p pubkey -s seckey]\n"
-	    "\treop -D [-i ident] [-p pubkey -s seckey] -m message [-x encfile]\n"
-	    "\treop -E [-1b] [-i ident] [-p pubkey -s seckey] -m message [-x encfile]\n"
-	    "\treop -S [-e] [-x sigfile] -s seckey -m message\n"
-	    "\treop -V [-eq] [-x sigfile] -p pubkey -m message\n"
-	    );
-	exit(1);
-}
-
 static int
 xopen(const char *fname, int oflags, mode_t mode)
 {
@@ -357,7 +340,7 @@ gethomefile(const char *filename)
 		errx(1, "can't find HOME");
 	snprintf(buf, sizeof(buf), "%s/.reop", home);
 	if (stat(buf, &sb) == -1 || !S_ISDIR(sb.st_mode))
-		usage("Can't use default files without ~/.reop");
+		errx(1, "Can't use default files without ~/.reop");
 	snprintf(buf, sizeof(buf), "%s/.reop/%s", home, filename);
 	return buf;
 }
@@ -516,7 +499,7 @@ findpubkey(const char *ident)
  * 2. lookup ident
  * 3. default pubkey file
  */
-static const struct pubkey *
+const struct pubkey *
 getpubkey(const char *pubkeyfile, const char *ident)
 {
 	char dummyident[IDENTLEN];
@@ -546,7 +529,7 @@ freepubkey(const struct pubkey *pubkey)
  * 1. specified file
  * 2. default seckey file
  */
-static const struct seckey *
+const struct seckey *
 getseckey(const char *seckeyfile, char *ident, kdf_allowstdin allowstdin)
 {
 	char dummyident[IDENTLEN];
@@ -604,7 +587,7 @@ writekeyfile(const char *filename, const char *info, const void *key,
 /*
  * generate two key pairs, one for signing and one for encryption.
  */
-static void
+void
 generate(const char *pubkeyfile, const char *seckeyfile, int rounds,
     const char *ident)
 {
@@ -700,7 +683,7 @@ freesig(const struct sig *sig)
 	xfree((void *)sig, sizeof(*sig));
 }
 
-static void
+void
 signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
     int embedded)
 {
@@ -728,7 +711,7 @@ signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
 /*
  * simple case, detached signature
  */
-static void
+void
 verify(const struct pubkey *pubkey, uint8_t *buf, uint64_t buflen,
     const struct sig *sig)
 {
@@ -737,7 +720,7 @@ verify(const struct pubkey *pubkey, uint8_t *buf, uint64_t buflen,
 	verifyraw(pubkey->sigkey, buf, buflen, sig->sig);
 }
 
-static void
+void
 verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
     int quiet)
 {
@@ -762,7 +745,7 @@ verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
 /*
  * message followed by signature in one file
  */
-static void
+void
 verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet)
 {
 	char ident[IDENTLEN];
@@ -865,7 +848,7 @@ writeencfile(const char *filename, const void *hdr,
  * an ephemeral key is used to make the encryption one way
  * that key is then encrypted with our seckey to provide authentication
  */
-static void
+void
 pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
     const char *msgfile, const char *encfile, opt_binary binary)
 {
@@ -903,7 +886,7 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
  * encrypt a file using public key cryptography
  * old version 1.0 variant
  */
-static void
+void
 v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
     const char *msgfile, const char *encfile, opt_binary binary)
 {
@@ -935,7 +918,7 @@ v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 /*
  * encrypt a file using symmetric cryptography (a password)
  */
-static void
+void
 symencrypt(const char *msgfile, const char *encfile, int rounds, opt_binary binary)
 {
 	struct symmsg symmsg;
@@ -965,7 +948,7 @@ symencrypt(const char *msgfile, const char *encfile, int rounds, opt_binary bina
 /*
  * decrypt a file, either public key or symmetric based on header
  */
-static void
+void
 decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
     const char *encfile)
 {
@@ -1126,181 +1109,4 @@ fail:
 	errx(1, "invalid encrypted message: %s", encfile);
 fpfail:
 	errx(1, "fingerprint mismatch");
-}
-
-int
-main(int argc, char **argv)
-{
-	const char *pubkeyfile = NULL, *seckeyfile = NULL, *msgfile = NULL,
-	    *xfile = NULL;
-	char xfilebuf[1024];
-	const char *ident = NULL;
-	int ch, rounds;
-	int embedded = 0;
-	int quiet = 0;
-	int v1compat = 0;
-	opt_binary binary = { 0 };
-	enum {
-		NONE,
-		DECRYPT,
-		ENCRYPT,
-		GENERATE,
-		SIGN,
-		VERIFY
-	} verb = NONE;
-
-	rounds = 42;
-
-	while ((ch = getopt(argc, argv, "1CDEGSVbei:m:np:qs:x:")) != -1) {
-		switch (ch) {
-		case '1':
-			v1compat = 1;
-			break;
-		case 'D':
-			if (verb)
-				usage(NULL);
-			verb = DECRYPT;
-			break;
-		case 'E':
-			if (verb)
-				usage(NULL);
-			verb = ENCRYPT;
-			break;
-		case 'G':
-			if (verb)
-				usage(NULL);
-			verb = GENERATE;
-			break;
-		case 'S':
-			if (verb)
-				usage(NULL);
-			verb = SIGN;
-			break;
-		case 'V':
-			if (verb)
-				usage(NULL);
-			verb = VERIFY;
-			break;
-		case 'b':
-			binary.v = 1;
-			break;
-		case 'e':
-			embedded = 1;
-			break;
-		case 'i':
-			ident = optarg;
-			break;
-		case 'm':
-			msgfile = optarg;
-			break;
-		case 'n':
-			rounds = 0;
-			break;
-		case 'p':
-			pubkeyfile = optarg;
-			break;
-		case 'q':
-			quiet = 1;
-			break;
-		case 's':
-			seckeyfile = optarg;
-			break;
-		case 'x':
-			xfile = optarg;
-			break;
-		default:
-			usage(NULL);
-			break;
-		}
-	}
-	argc -= optind;
-	argv += optind;
-
-	if (argc != 0)
-		usage(NULL);
-
-	switch (verb) {
-	case ENCRYPT:
-	case DECRYPT:
-		if (!msgfile)
-			usage("need msgfile");
-		if (!xfile) {
-			if (strcmp(msgfile, "-") == 0)
-				usage("must specify encfile with - message");
-			if (snprintf(xfilebuf, sizeof(xfilebuf), "%s.enc",
-			    msgfile) >= sizeof(xfilebuf))
-				errx(1, "path too long");
-			xfile = xfilebuf;
-		}
-		break;
-	case SIGN:
-	case VERIFY:
-		if (!xfile && msgfile) {
-			if (strcmp(msgfile, "-") == 0)
-				usage("must specify sigfile with - message");
-			if (snprintf(xfilebuf, sizeof(xfilebuf), "%s.sig",
-			    msgfile) >= sizeof(xfilebuf))
-				errx(1, "path too long");
-			xfile = xfilebuf;
-		}
-		break;
-	default:
-		break;
-	}
-
-	switch (verb) {
-	case DECRYPT:
-		decrypt(pubkeyfile, seckeyfile, msgfile, xfile);
-		break;
-	case ENCRYPT:
-		if (seckeyfile && (!pubkeyfile && !ident))
-			usage("specify a pubkey or ident");
-		if (pubkeyfile || ident) {
-			if (v1compat)
-				v1pubencrypt(pubkeyfile, ident, seckeyfile, msgfile, xfile, binary);
-			else
-				pubencrypt(pubkeyfile, ident, seckeyfile, msgfile, xfile, binary);
-		} else
-			symencrypt(msgfile, xfile, rounds, binary);
-		break;
-	case GENERATE:
-		if (!ident && !(ident= getenv("USER")))
-			ident = "unknown";
-
-		/* can specify none, but not only one */
-		if ((!pubkeyfile && seckeyfile) ||
-		    (!seckeyfile && pubkeyfile))
-			usage("must specify pubkey and seckey");
-		/* if none, create ~/.reop */
-		if (!pubkeyfile && !seckeyfile) {
-			char buf[1024];
-			const char *home;
-
-			if (!(home = getenv("HOME")))
-				errx(1, "can't find HOME");
-			snprintf(buf, sizeof(buf), "%s/.reop", home);
-			if (mkdir(buf, 0700) == -1 && errno != EEXIST)
-				err(1, "Unable to create ~/.reop");
-		}
-		generate(pubkeyfile, seckeyfile, rounds, ident);
-		break;
-	case SIGN:
-		if (!msgfile)
-			usage("must specify message");
-		signfile(seckeyfile, msgfile, xfile, embedded);
-		break;
-	case VERIFY:
-		if (!msgfile && !xfile)
-			usage("must specify message or sigfile");
-		if (msgfile)
-			verifysimple(pubkeyfile, msgfile, xfile, quiet);
-		else
-			verifyembedded(pubkeyfile, xfile, quiet);
-		break;
-	default:
-		usage(NULL);
-		break;
-	}
-
-	return 0;
 }
