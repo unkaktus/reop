@@ -180,9 +180,8 @@ xmalloc(size_t len)
 }
 
 static void
-xfree(const void *cp, size_t len)
+xfree(void *p, size_t len)
 {
-	void *p = (void *)cp;
 	if (!p)
 		return;
 	sodium_memzero(p, len);
@@ -266,7 +265,7 @@ signmsg(const uint8_t *seckey, uint8_t *msg, unsigned long long msglen,
  * wrapper around crypto_sign_open supporting detached signatures
  */
 static void
-verifymsg(struct pubkey *pubkey, uint8_t *msg, unsigned long long msglen,
+verifymsg(const struct pubkey *pubkey, uint8_t *msg, unsigned long long msglen,
     struct sig *sig, int quiet)
 {
 	if (memcmp(pubkey->fingerprint, sig->fingerprint, FPLEN) != 0)
@@ -521,22 +520,30 @@ findpubkey(const char *ident)
  * 2. lookup ident
  * 3. default pubkey file
  */
-static void
-getpubkey(const char *pubkeyfile, const char *ident, struct pubkey *pubkey)
+static const struct pubkey *
+getpubkey(const char *pubkeyfile, const char *ident)
 {
-	const struct pubkey *identkey;
 	char dummyident[IDENTLEN];
 
+	struct pubkey *pubkey = xmalloc(sizeof(*pubkey));
 	if (!pubkeyfile && ident) {
+		const struct pubkey *identkey;
 		if ((identkey = findpubkey(ident))) {
 			*pubkey = *identkey;
-			return;
+			return pubkey;
 		}
 		errx(1, "unable to find a pubkey for %s", ident);
 	}
 	if (!pubkeyfile)
 		pubkeyfile = gethomefile("pubkey");
 	readkeyfile(pubkeyfile, pubkey, sizeof(*pubkey), dummyident);
+	return pubkey;
+}
+
+void
+freepubkey(const struct pubkey *pubkey)
+{
+	xfree((void *)pubkey, sizeof(*pubkey));
 }
 
 /*
@@ -566,6 +573,12 @@ getseckey(const char *seckeyfile, char *ident, kdf_allowstdin allowstdin)
 	sodium_memzero(symkey, sizeof(symkey));
 
 	return seckey;
+}
+
+void
+freeseckey(const struct seckey *seckey)
+{
+	xfree((void *)seckey, sizeof(*seckey));
 }
 
 /*
@@ -691,7 +704,7 @@ sign(const char *seckeyfile, const char *msgfile, const char *sigfile,
 	memcpy(sig.fingerprint, seckey->fingerprint, FPLEN);
 	memcpy(sig.sigalg, SIGALG, 2);
 
-	xfree(seckey, sizeof(*seckey));
+	freeseckey(seckey);
 
 	if (embedded)
 		writesignedmsg(sigfile, &sig, ident, msg, msglen);
@@ -711,17 +724,17 @@ verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
 {
 	char ident[IDENTLEN];
 	struct sig sig;
-	struct pubkey pubkey;
 	unsigned long long msglen;
 	uint8_t *msg;
 
 	msg = readall(msgfile, &msglen);
 
 	readkeyfile(sigfile, &sig, sizeof(sig), ident);
-	getpubkey(pubkeyfile, ident, &pubkey);
+	const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
 
-	verifymsg(&pubkey, msg, msglen, &sig, quiet);
+	verifymsg(pubkey, msg, msglen, &sig, quiet);
 
+	freepubkey(pubkey);
 	xfree(msg, msglen);
 }
 
@@ -733,7 +746,6 @@ verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet)
 {
 	char ident[IDENTLEN];
 	struct sig sig;
-	struct pubkey pubkey;
 	uint8_t *msg;
 	unsigned long long msglen;
 	uint8_t *msgdata;
@@ -763,10 +775,11 @@ verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet)
 	if (b64_pton(begin, (void *)&sig, sizeof(sig)) != sizeof(sig))
  		goto fail;
 
-	getpubkey(pubkeyfile, ident, &pubkey);
+	const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
 
-	verifymsg(&pubkey, msg, msglen, &sig, quiet);
+	verifymsg(pubkey, msg, msglen, &sig, quiet);
 
+	freepubkey(pubkey);
 	xfree(msgdata, msgdatalen);
 
 	return;
@@ -835,7 +848,6 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 {
 	char myident[IDENTLEN];
 	struct encmsg encmsg;
-	struct pubkey pubkey;
 	uint8_t ephseckey[ENCSECRETBYTES];
 	uint8_t *msg;
 	unsigned long long msglen;
@@ -843,19 +855,20 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 
 	msg = readall(msgfile, &msglen);
 
-	getpubkey(pubkeyfile, ident, &pubkey);
+	const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
 	const struct seckey *seckey = getseckey(seckeyfile, myident, allowstdin);
 
 	memcpy(encmsg.encalg, ENCALG, 2);
-	memcpy(encmsg.pubfingerprint, pubkey.fingerprint, FPLEN);
+	memcpy(encmsg.pubfingerprint, pubkey->fingerprint, FPLEN);
 	memcpy(encmsg.secfingerprint, seckey->fingerprint, FPLEN);
 	crypto_box_keypair(encmsg.ephpubkey, ephseckey);
 
-	pubencryptmsg(msg, msglen, encmsg.box, pubkey.enckey, ephseckey);
+	pubencryptmsg(msg, msglen, encmsg.box, pubkey->enckey, ephseckey);
 
-	pubencryptmsg(encmsg.ephpubkey, sizeof(encmsg.ephpubkey), encmsg.ephbox, pubkey.enckey, seckey->enckey);
+	pubencryptmsg(encmsg.ephpubkey, sizeof(encmsg.ephpubkey), encmsg.ephbox, pubkey->enckey, seckey->enckey);
 
-	xfree(seckey, sizeof(*seckey));
+	freeseckey(seckey);
+	freepubkey(pubkey);
 	sodium_memzero(&ephseckey, sizeof(ephseckey));
 
 	writeencfile(encfile, &encmsg, sizeof(encmsg), myident, msg, msglen, binary);
@@ -873,22 +886,23 @@ v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 {
 	char myident[IDENTLEN];
 	struct oldencmsg oldencmsg;
-	struct pubkey pubkey;
 	uint8_t *msg;
 	unsigned long long msglen;
 	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 
-	getpubkey(pubkeyfile, ident, &pubkey);
+	const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
 
 	const struct seckey *seckey = getseckey(seckeyfile, myident, allowstdin);
 
 	msg = readall(msgfile, &msglen);
 
 	memcpy(oldencmsg.encalg, OLDENCALG, 2);
-	memcpy(oldencmsg.pubfingerprint, pubkey.fingerprint, FPLEN);
+	memcpy(oldencmsg.pubfingerprint, pubkey->fingerprint, FPLEN);
 	memcpy(oldencmsg.secfingerprint, seckey->fingerprint, FPLEN);
-	pubencryptmsg(msg, msglen, oldencmsg.box, pubkey.enckey, seckey->enckey);
-	xfree(seckey, sizeof(*seckey));
+	pubencryptmsg(msg, msglen, oldencmsg.box, pubkey->enckey, seckey->enckey);
+
+	freeseckey(seckey);
+	freepubkey(pubkey);
 
 	writeencfile(encfile, &oldencmsg, sizeof(oldencmsg), myident, msg, msglen, binary);
 
@@ -944,7 +958,6 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		struct oldencmsg oldencmsg;
 		struct oldekcmsg oldekcmsg;
 	} hdr;
-	struct pubkey pubkey;
 	uint8_t symkey[SYMKEYBYTES];
 	int rv;
 
@@ -1039,30 +1052,32 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 	} else if (memcmp(hdr.alg, ENCALG, 2) == 0) {
 		if (rv != sizeof(hdr.encmsg))
 			goto fail;
-		getpubkey(pubkeyfile, ident, &pubkey);
+		const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
 		const struct seckey *seckey = getseckey(seckeyfile, NULL, allowstdin);
 		if (memcmp(hdr.encmsg.pubfingerprint, seckey->fingerprint, FPLEN) != 0 ||
-		    memcmp(hdr.encmsg.secfingerprint, pubkey.fingerprint, FPLEN) != 0)
+		    memcmp(hdr.encmsg.secfingerprint, pubkey->fingerprint, FPLEN) != 0)
 			goto fpfail;
 
-		pubdecryptmsg(hdr.encmsg.ephpubkey, sizeof(hdr.encmsg.ephpubkey), hdr.encmsg.ephbox, pubkey.enckey, seckey->enckey);
+		pubdecryptmsg(hdr.encmsg.ephpubkey, sizeof(hdr.encmsg.ephpubkey), hdr.encmsg.ephbox, pubkey->enckey, seckey->enckey);
 		pubdecryptmsg(msg, msglen, hdr.encmsg.box, hdr.encmsg.ephpubkey, seckey->enckey);
-		xfree(seckey, sizeof(*seckey));
+		freeseckey(seckey);
+		freepubkey(pubkey);
 	} else if (memcmp(hdr.alg, OLDENCALG, 2) == 0) {
 		if (rv != sizeof(hdr.oldencmsg))
 			goto fail;
-		getpubkey(pubkeyfile, ident, &pubkey);
+		const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
 		const struct seckey *seckey = getseckey(seckeyfile, NULL, allowstdin);
 		/* pub/sec pairs work both ways */
-		if (memcmp(hdr.oldencmsg.pubfingerprint, pubkey.fingerprint, FPLEN) == 0) {
+		if (memcmp(hdr.oldencmsg.pubfingerprint, pubkey->fingerprint, FPLEN) == 0) {
 			if (memcmp(hdr.oldencmsg.secfingerprint, seckey->fingerprint, FPLEN) != 0)
 				goto fpfail;
 		} else if (memcmp(hdr.oldencmsg.pubfingerprint, seckey->fingerprint, FPLEN) != 0 ||
 		    memcmp(hdr.oldencmsg.pubfingerprint, seckey->fingerprint, FPLEN) != 0)
 			goto fpfail;
 
-		pubdecryptmsg(msg, msglen, hdr.oldencmsg.box, pubkey.enckey, seckey->enckey);
-		xfree(seckey, sizeof(*seckey));
+		pubdecryptmsg(msg, msglen, hdr.oldencmsg.box, pubkey->enckey, seckey->enckey);
+		freeseckey(seckey);
+		freepubkey(pubkey);
 	} else if (memcmp(hdr.alg, OLDEKCALG, 2) == 0) {
 		if (rv != sizeof(hdr.oldekcmsg))
 			goto fail;
@@ -1071,7 +1086,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 			goto fpfail;
 
 		pubdecryptmsg(msg, msglen, hdr.oldekcmsg.box, hdr.oldekcmsg.pubkey, seckey->enckey);
-		xfree(seckey, sizeof(*seckey));
+		freeseckey(seckey);
 	} else {
 		goto fail;
 	}
