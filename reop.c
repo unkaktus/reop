@@ -255,7 +255,7 @@ pubdecryptraw(uint8_t *buf, uint64_t buflen, uint8_t *box,
  * wrapper around crypto_sign to generate detached signatures
  */
 static void
-signraw(const uint8_t *seckey, uint8_t *buf, uint64_t buflen,
+signraw(const uint8_t *seckey, const uint8_t *buf, uint64_t buflen,
     uint8_t *sig)
 {
 	crypto_sign_detached(sig, NULL, buf, buflen, seckey);
@@ -658,8 +658,8 @@ generate(const char *pubkeyfile, const char *seckeyfile, int rounds,
 }
 
 static void
-writesignedmsg(const char *filename, struct sig *sig,
-    const char *ident, uint8_t *msg, uint64_t msglen)
+writesignedmsg(const char *filename, const struct sig *sig,
+    const char *ident, const uint8_t *msg, uint64_t msglen)
 {
 	char header[1024];
 	char b64[1024];
@@ -685,33 +685,47 @@ writesignedmsg(const char *filename, struct sig *sig,
 /*
  * main sign function
  */
+const struct sig *
+sign(const struct seckey *seckey, const uint8_t *msg, uint64_t msglen)
+{
+	struct sig *sig = xmalloc(sizeof(*sig));
+
+	signraw(seckey->sigkey, msg, msglen, sig->sig);
+
+	memcpy(sig->fingerprint, seckey->fingerprint, FPLEN);
+	memcpy(sig->sigalg, SIGALG, 2);
+
+	return sig;
+}
+
+void
+freesig(const struct sig *sig)
+{
+	xfree((void *)sig, sizeof(*sig));
+}
+
 static void
-sign(const char *seckeyfile, const char *msgfile, const char *sigfile,
+signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
     int embedded)
 {
-	struct sig sig;
-	char ident[IDENTLEN];
-	uint8_t *msg;
 	uint64_t msglen;
+	uint8_t *msg = readall(msgfile, &msglen);
+
+	char ident[IDENTLEN];
 	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
-
-	msg = readall(msgfile, &msglen);
-
 	const struct seckey *seckey = getseckey(seckeyfile, ident, allowstdin);
 
-	signraw(seckey->sigkey, msg, msglen, sig.sig);
-
-	memcpy(sig.fingerprint, seckey->fingerprint, FPLEN);
-	memcpy(sig.sigalg, SIGALG, 2);
+	const struct sig *sig = sign(seckey, msg, msglen);
 
 	freeseckey(seckey);
 
 	if (embedded)
-		writesignedmsg(sigfile, &sig, ident, msg, msglen);
+		writesignedmsg(sigfile, sig, ident, msg, msglen);
 	else
-		writekeyfile(sigfile, "SIGNATURE", &sig, sizeof(sig), ident,
+		writekeyfile(sigfile, "SIGNATURE", sig, sizeof(*sig), ident,
 		    O_TRUNC, 0666);
 
+	freesig(sig);
 	xfree(msg, msglen);
 }
 
@@ -1264,7 +1278,7 @@ main(int argc, char **argv)
 	case SIGN:
 		if (!msgfile)
 			usage("must specify message");
-		sign(seckeyfile, msgfile, xfile, embedded);
+		signfile(seckeyfile, msgfile, xfile, embedded);
 		break;
 	case VERIFY:
 		if (!msgfile && !xfile)
