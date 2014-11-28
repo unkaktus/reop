@@ -265,15 +265,11 @@ signraw(const uint8_t *seckey, const uint8_t *buf, uint64_t buflen,
  * wrapper around crypto_sign_open supporting detached signatures
  */
 static void
-verifyraw(const struct pubkey *pubkey, uint8_t *buf, uint64_t buflen,
-    struct sig *sig, int quiet)
+verifyraw(const uint8_t *pubkey, uint8_t *buf, uint64_t buflen,
+    const uint8_t *sig)
 {
-	if (memcmp(pubkey->fingerprint, sig->fingerprint, FPLEN) != 0)
-		errx(1, "verification failed: checked against wrong key");
-	if (crypto_sign_verify_detached(sig->sig, buf, buflen, pubkey->sigkey) == -1)
+	if (crypto_sign_verify_detached(sig, buf, buflen, pubkey) == -1)
 		errx(1, "signature verification failed");
-	if (!quiet)
-		printf("Signature Verified\n");
 }
 
 /* file utilities */
@@ -733,6 +729,15 @@ signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
  * simple case, detached signature
  */
 static void
+verify(const struct pubkey *pubkey, uint8_t *buf, uint64_t buflen,
+    const struct sig *sig)
+{
+	if (memcmp(pubkey->fingerprint, sig->fingerprint, FPLEN) != 0)
+		errx(1, "verification failed: checked against wrong key");
+	verifyraw(pubkey->sigkey, buf, buflen, sig->sig);
+}
+
+static void
 verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
     int quiet)
 {
@@ -746,7 +751,9 @@ verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
 	readkeyfile(sigfile, &sig, sizeof(sig), ident);
 	const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
 
-	verifyraw(pubkey, msg, msglen, &sig, quiet);
+	verify(pubkey, msg, msglen, &sig);
+	if (!quiet)
+		printf("Signature Verified\n");
 
 	freepubkey(pubkey);
 	xfree(msg, msglen);
@@ -791,7 +798,9 @@ verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet)
 
 	const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
 
-	verifyraw(pubkey, msg, msglen, &sig, quiet);
+	verify(pubkey, msg, msglen, &sig);
+	if (!quiet)
+		printf("Signature Verified\n");
 
 	freepubkey(pubkey);
 	xfree(msgdata, msgdatalen);
