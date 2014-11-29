@@ -60,6 +60,7 @@
 #define SIGALG "Ed"	/* Ed25519 */
 #define ENCALG "eC"	/* ephemeral Curve25519-Salsa20 */
 #define OLDENCALG "CS"	/* Curve25519-Salsa20 */
+#define ENCKEYALG "CS"	/* same as "old", didn't change */
 #define OLDEKCALG "eS"	/* ephemeral-curve25519-Salsa20 */
 #define SYMALG "SP"	/* Salsa20-Poly1305 */
 #define KDFALG "BK"	/* bcrypt kdf */
@@ -676,7 +677,7 @@ generate(const char *pubkeyfile, const char *seckeyfile, int rounds,
 
 	memcpy(seckey.fingerprint, fingerprint, FPLEN);
 	memcpy(seckey.sigalg, SIGALG, 2);
-	memcpy(seckey.encalg, OLDENCALG, 2);
+	memcpy(seckey.encalg, ENCKEYALG, 2);
 	memcpy(seckey.symalg, SYMALG, 2);
 	memcpy(seckey.kdfalg, KDFALG, 2);
 	seckey.kdfrounds = htonl(rounds);
@@ -694,7 +695,7 @@ generate(const char *pubkeyfile, const char *seckeyfile, int rounds,
 
 	memcpy(pubkey.fingerprint, fingerprint, FPLEN);
 	memcpy(pubkey.sigalg, SIGALG, 2);
-	memcpy(pubkey.encalg, OLDENCALG, 2);
+	memcpy(pubkey.encalg, ENCKEYALG, 2);
 
 	if (!pubkeyfile)
 		pubkeyfile = gethomefile("pubkey");
@@ -961,6 +962,10 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
 	const struct seckey *seckey = getseckey(seckeyfile, myident, allowstdin);
 
+	if (memcmp(pubkey->encalg, ENCKEYALG, 2) != 0)
+		errx(1, "unsupported key format");
+	if (memcmp(seckey->encalg, ENCKEYALG, 2) != 0)
+		errx(1, "unsupported key format");
 	memcpy(encmsg.encalg, ENCALG, 2);
 	memcpy(encmsg.pubfingerprint, pubkey->fingerprint, FPLEN);
 	memcpy(encmsg.secfingerprint, seckey->fingerprint, FPLEN);
@@ -999,6 +1004,10 @@ v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 
 	msg = readall(msgfile, &msglen);
 
+	if (memcmp(pubkey->encalg, ENCKEYALG, 2) != 0)
+		errx(1, "unsupported key format");
+	if (memcmp(seckey->encalg, ENCKEYALG, 2) != 0)
+		errx(1, "unsupported key format");
 	memcpy(oldencmsg.encalg, OLDENCALG, 2);
 	memcpy(oldencmsg.pubfingerprint, pubkey->fingerprint, FPLEN);
 	memcpy(oldencmsg.secfingerprint, seckey->fingerprint, FPLEN);
@@ -1161,6 +1170,10 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		    memcmp(hdr.encmsg.secfingerprint, pubkey->fingerprint, FPLEN) != 0)
 			goto fpfail;
 
+		if (memcmp(pubkey->encalg, ENCKEYALG, 2) != 0)
+			errx(1, "unsupported key format");
+		if (memcmp(seckey->encalg, ENCKEYALG, 2) != 0)
+			errx(1, "unsupported key format");
 		pubdecryptraw(hdr.encmsg.ephpubkey, sizeof(hdr.encmsg.ephpubkey), hdr.encmsg.ephbox, pubkey->enckey, seckey->enckey);
 		pubdecryptraw(msg, msglen, hdr.encmsg.box, hdr.encmsg.ephpubkey, seckey->enckey);
 		freeseckey(seckey);
@@ -1178,6 +1191,10 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		    memcmp(hdr.oldencmsg.pubfingerprint, seckey->fingerprint, FPLEN) != 0)
 			goto fpfail;
 
+		if (memcmp(pubkey->encalg, ENCKEYALG, 2) != 0)
+			errx(1, "unsupported key format");
+		if (memcmp(seckey->encalg, ENCKEYALG, 2) != 0)
+			errx(1, "unsupported key format");
 		pubdecryptraw(msg, msglen, hdr.oldencmsg.box, pubkey->enckey, seckey->enckey);
 		freeseckey(seckey);
 		freepubkey(pubkey);
