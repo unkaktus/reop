@@ -362,7 +362,7 @@ readident(char *buf, char *ident)
 }
 
 /*
- * try to read a few different kinds of files 
+ * will parse a few different kinds of keys
  */
 static void
 parsekeydata(const char *keydataorig, void *key, size_t keylen, char *ident)
@@ -392,6 +392,10 @@ invalid:
 	errx(1, "invalid key data");
 
 }
+
+/*
+ * read and parse a key
+ */
 static void
 readkeyfile(const char *filename, void *key, size_t keylen, char *ident)
 {
@@ -402,6 +406,7 @@ readkeyfile(const char *filename, void *key, size_t keylen, char *ident)
 	parsekeydata(keydata, key, keylen, ident);
 	xfree(keydata, keydatalen);
 }
+
 /*
  * generate a symmetric encryption key.
  * caller creates and provides salt.
@@ -529,6 +534,9 @@ getpubkey(const char *pubkeyfile, const char *ident)
 	return pubkey;
 }
 
+/*
+ * free pubkey
+ */
 void
 freepubkey(const struct pubkey *pubkey)
 {
@@ -564,6 +572,9 @@ getseckey(const char *seckeyfile, char *ident, kdf_allowstdin allowstdin)
 	return seckey;
 }
 
+/*
+ * free seckey
+ */
 void
 freeseckey(const struct seckey *seckey)
 {
@@ -646,6 +657,9 @@ generate(const char *pubkeyfile, const char *seckeyfile, int rounds,
 	    ident, O_EXCL, 0666);
 }
 
+/*
+ * write a combined message and signature
+ */
 static void
 writesignedmsg(const char *filename, const struct sig *sig,
     const char *ident, const uint8_t *msg, uint64_t msglen)
@@ -672,7 +686,7 @@ writesignedmsg(const char *filename, const struct sig *sig,
 }
 
 /*
- * main sign function
+ * basic sign function
  */
 const struct sig *
 sign(const struct seckey *seckey, const uint8_t *msg, uint64_t msglen)
@@ -687,12 +701,42 @@ sign(const struct seckey *seckey, const uint8_t *msg, uint64_t msglen)
 	return sig;
 }
 
+/*
+ * free sig
+ */
 void
 freesig(const struct sig *sig)
 {
 	xfree((void *)sig, sizeof(*sig));
 }
 
+/*
+ * parse signature data into struct
+ */
+const struct sig *
+parsesig(const char *sigdata, char *ident)
+{
+	struct sig *sig = xmalloc(sizeof(*sig));
+	parsekeydata(sigdata, sig, sizeof(*sig), ident);
+	return sig;
+}
+
+/*
+ * read signature file
+ */
+static const struct sig *
+readsigfile(const char *sigfile, char *ident)
+{
+	uint64_t sigdatalen;
+	uint8_t *sigdata = readall(sigfile, &sigdatalen);
+	const struct sig *sig = parsesig(sigdata, ident);
+	xfree(sigdata, sigdatalen);
+	return sig;
+}
+
+/*
+ * sign a file
+ */
 void
 signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
     int embedded)
@@ -719,26 +763,8 @@ signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
 }
 
 /*
- * simple case, detached signature
+ * basic verify function
  */
-const struct sig *
-parsesig(const char *sigdata, char *ident)
-{
-	struct sig *sig = xmalloc(sizeof(*sig));
-	parsekeydata(sigdata, sig, sizeof(*sig), ident);
-	return sig;
-}
-
-static const struct sig *
-readsigfile(const char *sigfile, char *ident)
-{
-	uint64_t sigdatalen;
-	uint8_t *sigdata = readall(sigfile, &sigdatalen);
-	const struct sig *sig = parsesig(sigdata, ident);
-	xfree(sigdata, sigdatalen);
-	return sig;
-}
-
 void
 verify(const struct pubkey *pubkey, uint8_t *buf, uint64_t buflen,
     const struct sig *sig)
@@ -748,6 +774,9 @@ verify(const struct pubkey *pubkey, uint8_t *buf, uint64_t buflen,
 	verifyraw(pubkey->sigkey, buf, buflen, sig->sig);
 }
 
+/*
+ * simple case, detached signature
+ */
 void
 verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
     int quiet)
