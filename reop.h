@@ -33,9 +33,11 @@ void freeseckey(const struct seckey *seckey);
 void generate(const char *pubkeyfile, const char *seckeyfile, int rounds, const char *ident);
 
 const struct sig *sign(const struct seckey *seckey, const uint8_t *msg, uint64_t msglen);
-void freesig(const struct sig *sig);
 void signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
     int embedded);
+
+void freesig(const struct sig *sig);
+const struct sig *parsesig(const char *sigdata, char *ident);
 
 void verify(const struct pubkey *pubkey, uint8_t *buf, uint64_t buflen,
     const struct sig *sig);

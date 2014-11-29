@@ -365,13 +365,12 @@ readident(char *buf, char *ident)
  * try to read a few different kinds of files 
  */
 static void
-readkeyfile(const char *filename, void *key, size_t keylen, char *ident)
+parsekeydata(const char *keydataorig, void *key, size_t keylen, char *ident)
 {
 	const char *beginreop = "-----BEGIN REOP";
 	const char *endreop = "-----END REOP";
-	uint64_t keydatalen;
 
-	char *keydata = readall(filename, &keydatalen);
+	char *keydata = strdup(keydataorig);
 	if (strncmp(keydata, beginreop, strlen(beginreop)) != 0)
 		goto invalid;
 	char *end;
@@ -384,13 +383,24 @@ readkeyfile(const char *filename, void *key, size_t keylen, char *ident)
 	begin = readident(begin + 1, ident);
 	*end = 0;
 	if (b64_pton(begin, key, keylen) != keylen)
-		errx(1, "invalid b64 encoding: %s", filename);
+		errx(1, "invalid b64 encoding");
 
-	xfree(keydata, keydatalen);
+	xfree(keydata, strlen(keydata));
 	return;
 
 invalid:
-	errx(1, "invalid key: %s", filename);
+	errx(1, "invalid key data");
+
+}
+static void
+readkeyfile(const char *filename, void *key, size_t keylen, char *ident)
+{
+	uint64_t keydatalen;
+
+	char *keydata = readall(filename, &keydatalen);
+
+	parsekeydata(keydata, key, keylen, ident);
+	xfree(keydata, keydatalen);
 }
 /*
  * generate a symmetric encryption key.
@@ -711,6 +721,24 @@ signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
 /*
  * simple case, detached signature
  */
+const struct sig *
+parsesig(const char *sigdata, char *ident)
+{
+	struct sig *sig = xmalloc(sizeof(*sig));
+	parsekeydata(sigdata, sig, sizeof(*sig), ident);
+	return sig;
+}
+
+static const struct sig *
+readsigfile(const char *sigfile, char *ident)
+{
+	uint64_t sigdatalen;
+	uint8_t *sigdata = readall(sigfile, &sigdatalen);
+	const struct sig *sig = parsesig(sigdata, ident);
+	xfree(sigdata, sigdatalen);
+	return sig;
+}
+
 void
 verify(const struct pubkey *pubkey, uint8_t *buf, uint64_t buflen,
     const struct sig *sig)
@@ -724,20 +752,18 @@ void
 verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
     int quiet)
 {
-	char ident[IDENTLEN];
-	struct sig sig;
 	uint64_t msglen;
-	uint8_t *msg;
+	uint8_t *msg = readall(msgfile, &msglen);
 
-	msg = readall(msgfile, &msglen);
-
-	readkeyfile(sigfile, &sig, sizeof(sig), ident);
+	char ident[IDENTLEN];
+	const struct sig *sig = readsigfile(sigfile, ident);
 	const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
 
-	verify(pubkey, msg, msglen, &sig);
+	verify(pubkey, msg, msglen, sig);
 	if (!quiet)
 		printf("Signature Verified\n");
 
+	freesig(sig);
 	freepubkey(pubkey);
 	xfree(msg, msglen);
 }
@@ -748,43 +774,29 @@ verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
 void
 verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet)
 {
-	char ident[IDENTLEN];
-	struct sig sig;
-	uint8_t *msg;
-	uint64_t msglen;
-	uint8_t *msgdata;
-	uint64_t msgdatalen;
-	char *begin, *end;
 	const char *beginreopmsg = "-----BEGIN REOP SIGNED MESSAGE-----\n";
 	const char *beginreopsig = "-----BEGIN REOP SIGNATURE-----\n";
-	const char *endreopmsg = "-----END REOP SIGNED MESSAGE-----\n";
 
-	msgdata = readall(sigfile, &msgdatalen);
+	uint64_t msgdatalen;
+	uint8_t *msgdata = readall(sigfile, &msgdatalen);
+
 	if (strncmp(msgdata, beginreopmsg, strlen(beginreopmsg)) != 0)
  		goto fail;
-	begin = msgdata + 36;
-	if (!(end = strstr(begin, beginreopsig)))
+	uint8_t *msg = msgdata + 36;
+	uint8_t *sigdata;
+	if (!(sigdata = strstr(msg, beginreopsig)))
  		goto fail;
-	*end = 0;
+	uint64_t msglen = sigdata - msg;
 
-	msg = begin;
-	msglen = end - begin;
-
-	begin = end + 31;
-	if (!(end = strstr(begin, endreopmsg)))
- 		goto fail;
-	*end = 0;
-
-	begin = readident(begin, ident);
-	if (b64_pton(begin, (void *)&sig, sizeof(sig)) != sizeof(sig))
- 		goto fail;
-
+	char ident[IDENTLEN];
+	const struct sig *sig = parsesig(sigdata, ident);
 	const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
 
-	verify(pubkey, msg, msglen, &sig);
+	verify(pubkey, msg, msglen, sig);
 	if (!quiet)
 		printf("Signature Verified\n");
 
+	freesig(sig);
 	freepubkey(pubkey);
 	xfree(msgdata, msgdatalen);
 
