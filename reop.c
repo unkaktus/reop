@@ -275,14 +275,11 @@ verifyraw(const uint8_t *pubkey, uint8_t *buf, uint64_t buflen,
 static uint8_t *
 readall(const char *filename, uint64_t *msglenp)
 {
-	uint64_t msglen = 0;
-	uint8_t *msg = NULL;
 	struct stat sb;
 	ssize_t x, space;
-	int fd;
 	const uint64_t maxmsgsize = 1UL << 30;
 
-	fd = xopen(filename, O_RDONLY | O_NOFOLLOW, 0);
+	int fd = xopen(filename, O_RDONLY | O_NOFOLLOW, 0);
 	if (fstat(fd, &sb) == 0 && S_ISREG(sb.st_mode)) {
 		if (sb.st_size > maxmsgsize)
 			errx(1, "msg too large in %s", filename);
@@ -291,7 +288,8 @@ readall(const char *filename, uint64_t *msglenp)
 		space = 64 * 1024;
 	}
 
-	msg = xmalloc(space + 1);
+	uint8_t *msg = xmalloc(space + 1);
+	uint64_t msglen = 0;
 	while (1) {
 		if (space == 0) {
 			if (msglen * 2 > maxmsgsize)
@@ -307,10 +305,9 @@ readall(const char *filename, uint64_t *msglenp)
 		space -= x;
 		msglen += x;
 	}
-
-	msg[msglen] = 0;
 	close(fd);
 
+	msg[msglen] = 0;
 	*msglenp = msglen;
 	return msg;
 }
@@ -318,10 +315,8 @@ readall(const char *filename, uint64_t *msglenp)
 static void
 writeall(int fd, const void *buf, size_t buflen, const char *filename)
 {
-	ssize_t x;
-
 	while (buflen != 0) {
-		x = write(fd, buf, buflen);
+		ssize_t x = write(fd, buf, buflen);
 		if (x == -1)
 			err(1, "write to %s", filename);
 		buflen -= x;
@@ -332,12 +327,10 @@ writeall(int fd, const void *buf, size_t buflen, const char *filename)
 static void
 writeb64data(int fd, const char *filename, char *b64)
 {
-	size_t amt, pos, rem;
-
-	rem = strlen(b64);
-	pos = 0;
+	size_t rem = strlen(b64);
+	size_t pos = 0;
 	while (rem > 0) {
-		amt = rem > 76 ? 76 : rem;
+		size_t amt = rem > 76 ? 76 : rem;
 		writeall(fd, b64 + pos, amt, filename);
 		writeall(fd, "\n", 1, filename);
 		pos += amt;
@@ -348,10 +341,8 @@ writeb64data(int fd, const char *filename, char *b64)
 static void
 wraplines(char *str, size_t space)
 {
-	size_t len, num;
-
-	len = strlen(str);
-	num = (len - 1) / 76;
+	size_t len = strlen(str);
+	size_t num = (len - 1) / 76;
 	if (len + num + 1 > space)
 		return;
 	while (num > 0) {
@@ -424,7 +415,6 @@ parsekeydata(const char *keydataorig, void *key, size_t keylen, char *ident)
 
 invalid:
 	errx(1, "invalid key data");
-
 }
 
 /*
@@ -434,7 +424,6 @@ static void
 readkeyfile(const char *filename, void *key, size_t keylen, char *ident)
 {
 	uint64_t keydatalen;
-
 	char *keydata = readall(filename, &keydatalen);
 
 	parsekeydata(keydata, key, keylen, ident);
@@ -642,9 +631,7 @@ static void
 writekeyfile(const char *filename, const char *info, const void *key,
     size_t keylen, const char *ident, int oflags, mode_t mode)
 {
-	int fd;
-
-	fd = xopen(filename, O_CREAT|oflags|O_NOFOLLOW|O_WRONLY, mode);
+	int fd = xopen(filename, O_CREAT|oflags|O_NOFOLLOW|O_WRONLY, mode);
 	const char *keydata = encodekey(info, key, keylen, ident);
 	writeall(fd, keydata, strlen(keydata), filename);
 	freestr(keydata);
@@ -712,9 +699,8 @@ writesignedmsg(const char *filename, const struct sig *sig,
 {
 	char header[1024];
 	char b64[1024];
-	int fd;
 
-	fd = xopen(filename, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
+	int fd = xopen(filename, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
 	snprintf(header, sizeof(header), "-----BEGIN REOP SIGNED MESSAGE-----\n");
 	writeall(fd, header, strlen(header), filename);
 	writeall(fd, msg, msglen, filename);
@@ -953,11 +939,10 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	char myident[IDENTLEN];
 	struct encmsg encmsg;
 	uint8_t ephseckey[ENCSECRETBYTES];
-	uint8_t *msg;
-	uint64_t msglen;
 	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 
-	msg = readall(msgfile, &msglen);
+	uint64_t msglen;
+	uint8_t *msg = readall(msgfile, &msglen);
 
 	const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
 	const struct seckey *seckey = getseckey(seckeyfile, myident, allowstdin);
@@ -972,7 +957,6 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	crypto_box_keypair(encmsg.ephpubkey, ephseckey);
 
 	pubencryptraw(msg, msglen, encmsg.box, pubkey->enckey, ephseckey);
-
 	pubencryptraw(encmsg.ephpubkey, sizeof(encmsg.ephpubkey), encmsg.ephbox, pubkey->enckey, seckey->enckey);
 
 	freeseckey(seckey);
@@ -994,15 +978,13 @@ v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 {
 	char myident[IDENTLEN];
 	struct oldencmsg oldencmsg;
-	uint8_t *msg;
-	uint64_t msglen;
 	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 
 	const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
-
 	const struct seckey *seckey = getseckey(seckeyfile, myident, allowstdin);
 
-	msg = readall(msgfile, &msglen);
+	uint64_t msglen;
+	uint8_t *msg = readall(msgfile, &msglen);
 
 	if (memcmp(pubkey->encalg, ENCKEYALG, 2) != 0)
 		errx(1, "unsupported key format");
@@ -1029,12 +1011,11 @@ symencrypt(const char *msgfile, const char *encfile, int rounds, opt_binary bina
 {
 	struct symmsg symmsg;
 	uint8_t symkey[SYMKEYBYTES];
-	uint8_t *msg;
-	uint64_t msglen;
 	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 	kdf_confirm confirm = { 1 };
 
-	msg = readall(msgfile, &msglen);
+	uint64_t msglen;
+	uint8_t *msg = readall(msgfile, &msglen);
 
 	memcpy(symmsg.kdfalg, KDFALG, 2);
 	memcpy(symmsg.symalg, SYMALG, 2);
@@ -1059,8 +1040,6 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
     const char *encfile)
 {
 	char ident[IDENTLEN];
-	uint8_t *encdata;
-	uint64_t encdatalen;
 	uint8_t *msg;
 	uint64_t msglen;
 	union {
@@ -1071,38 +1050,39 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		struct oldekcmsg oldekcmsg;
 	} hdr;
 	uint8_t symkey[SYMKEYBYTES];
-	int rv;
+	int hdrsize;
 
-	encdata = readall(encfile, &encdatalen);
+	uint64_t encdatalen;
+	uint8_t *encdata = readall(encfile, &encdatalen);
 	if (encdatalen > 6 && memcmp(encdata, REOP_BINARY, 4) == 0) {
 		uint8_t *ptr = encdata + 4;
 		uint8_t *endptr = encdata + encdatalen;
 		uint32_t identlen;
 
 		if (memcmp(ptr, SYMALG, 2) == 0) {
-			rv = sizeof(hdr.symmsg);
-			if (ptr + rv > endptr)
+			hdrsize = sizeof(hdr.symmsg);
+			if (ptr + hdrsize > endptr)
 				goto fail;
-			memcpy(&hdr.symmsg, ptr, rv);
-			ptr += rv;
+			memcpy(&hdr.symmsg, ptr, hdrsize);
+			ptr += hdrsize;
 		} else if (memcmp(ptr, ENCALG, 2) == 0) {
-			rv = sizeof(hdr.encmsg);
-			if (ptr + rv > endptr)
+			hdrsize = sizeof(hdr.encmsg);
+			if (ptr + hdrsize > endptr)
 				goto fail;
-			memcpy(&hdr.encmsg, ptr, rv);
-			ptr += rv;
+			memcpy(&hdr.encmsg, ptr, hdrsize);
+			ptr += hdrsize;
 		} else if (memcmp(ptr, OLDENCALG, 2) == 0) {
-			rv = sizeof(hdr.oldencmsg);
-			if (ptr + rv > endptr)
+			hdrsize = sizeof(hdr.oldencmsg);
+			if (ptr + hdrsize > endptr)
 				goto fail;
-			memcpy(&hdr.oldencmsg, ptr, rv);
-			ptr += rv;
+			memcpy(&hdr.oldencmsg, ptr, hdrsize);
+			ptr += hdrsize;
 		} else if (memcmp(ptr, OLDEKCALG, 2) == 0) {
-			rv = sizeof(hdr.oldekcmsg);
-			if (ptr + rv > endptr)
+			hdrsize = sizeof(hdr.oldekcmsg);
+			if (ptr + hdrsize > endptr)
 				goto fail;
-			memcpy(&hdr.oldekcmsg, ptr, rv);
-			ptr += rv;
+			memcpy(&hdr.oldekcmsg, ptr, hdrsize);
+			ptr += hdrsize;
 		} else {
 			goto fail;
 		}
@@ -1132,7 +1112,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		if (!(end = strstr(begin, beginreopdata)))
 			goto fail;
 		*end = 0;
-		if ((rv = b64_pton(begin, (void *)&hdr, sizeof(hdr))) == -1)
+		if ((hdrsize = b64_pton(begin, (void *)&hdr, sizeof(hdr))) == -1)
 			goto fail;
 		begin = end + strlen(beginreopdata);
 		if (!(end = strstr(begin, endreopmsg)))
@@ -1152,7 +1132,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 
 	if (memcmp(hdr.alg, SYMALG, 2) == 0) {
 		kdf_confirm confirm = { 0 };
-		if (rv != sizeof(hdr.symmsg))
+		if (hdrsize != sizeof(hdr.symmsg))
  			goto fail;
 		if (memcmp(hdr.symmsg.kdfalg, KDFALG, 2) != 0)
 			errx(1, "unsupported KDF");
@@ -1162,7 +1142,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		symdecryptraw(msg, msglen, hdr.symmsg.box, symkey);
 		sodium_memzero(symkey, sizeof(symkey));
 	} else if (memcmp(hdr.alg, ENCALG, 2) == 0) {
-		if (rv != sizeof(hdr.encmsg))
+		if (hdrsize != sizeof(hdr.encmsg))
 			goto fail;
 		const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
 		const struct seckey *seckey = getseckey(seckeyfile, NULL, allowstdin);
@@ -1179,7 +1159,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		freeseckey(seckey);
 		freepubkey(pubkey);
 	} else if (memcmp(hdr.alg, OLDENCALG, 2) == 0) {
-		if (rv != sizeof(hdr.oldencmsg))
+		if (hdrsize != sizeof(hdr.oldencmsg))
 			goto fail;
 		const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
 		const struct seckey *seckey = getseckey(seckeyfile, NULL, allowstdin);
@@ -1199,7 +1179,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		freeseckey(seckey);
 		freepubkey(pubkey);
 	} else if (memcmp(hdr.alg, OLDEKCALG, 2) == 0) {
-		if (rv != sizeof(hdr.oldekcmsg))
+		if (hdrsize != sizeof(hdr.oldekcmsg))
 			goto fail;
 		const struct seckey *seckey = getseckey(seckeyfile, NULL, allowstdin);
 		if (memcmp(hdr.oldekcmsg.pubfingerprint, seckey->fingerprint, FPLEN) != 0)
