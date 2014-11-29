@@ -24,6 +24,9 @@ typedef struct { int v; } kdf_allowstdin;
 typedef struct { int v; } kdf_confirm;
 typedef struct { int v; } opt_binary;
 
+void freestr(const char *str);
+char *newident(void);
+
 const struct pubkey *getpubkey(const char *pubkeyfile, const char *ident);
 void freepubkey(const struct pubkey *pubkey);
 
@@ -38,6 +41,7 @@ void signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
 
 void freesig(const struct sig *sig);
 const struct sig *parsesig(const char *sigdata, char *ident);
+const char *encodesig(const struct sig *sig, const char *ident);
 
 void verify(const struct pubkey *pubkey, uint8_t *buf, uint64_t buflen,
     const struct sig *sig);

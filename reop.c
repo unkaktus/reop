@@ -171,6 +171,21 @@ xfree(void *p, size_t len)
 	free(p);
 }
 
+void
+freestr(const char *str)
+{
+	xfree((void *)str, strlen(str));
+}
+
+/*
+ * allocate a new buffer large enough for an ident string
+ */
+char *
+newident(void)
+{
+	return calloc(1, IDENTLEN);
+}
+
 /*
  * nacl wrapper functions.
  * the nacl API isn't very friendly, requiring the caller to provide padding
@@ -326,6 +341,23 @@ writeb64data(int fd, const char *filename, char *b64)
 		writeall(fd, "\n", 1, filename);
 		pos += amt;
 		rem -= amt;
+	}
+}
+
+/* this may be slow... and dangerous... */
+static void
+wraplines(char *str)
+{
+	size_t amt, rem;
+
+	rem = strlen(str);
+	while (rem > 76) {
+		amt = 76;
+		str += amt;
+		rem -= amt;
+		memmove(str + 1, str, rem + 1);
+		*str = '\n';
+		str++;
 	}
 }
 
@@ -584,24 +616,36 @@ freeseckey(const struct seckey *seckey)
 /*
  * can write a few different file types
  */
+static const char *
+encodekey(const char *info, const void *key, size_t keylen, const char *ident)
+{
+	char buf[1024];
+	char b64[1024];
+
+	if (b64_ntop(key, keylen, b64, sizeof(b64)) == -1)
+		errx(1, "b64 encode failed");
+	wraplines(b64);
+	snprintf(buf, sizeof(buf), "-----BEGIN REOP %s-----\n"
+	    "ident:%s\n"
+	    "%s\n"
+	    "-----END REOP %s-----\n",
+	    info, ident, b64, info);
+	char *str = strdup(buf);
+	sodium_memzero(b64, sizeof(b64));
+	sodium_memzero(buf, sizeof(buf));
+	return str;
+}
+
 static void
 writekeyfile(const char *filename, const char *info, const void *key,
     size_t keylen, const char *ident, int oflags, mode_t mode)
 {
-	char header[1024];
-	char b64[1024];
 	int fd;
 
 	fd = xopen(filename, O_CREAT|oflags|O_NOFOLLOW|O_WRONLY, mode);
-	snprintf(header, sizeof(header), "-----BEGIN REOP %s-----\nident:%s\n",
-	    info, ident);
-	writeall(fd, header, strlen(header), filename);
-	if (b64_ntop(key, keylen, b64, sizeof(b64)) == -1)
-		errx(1, "b64 encode failed");
-	writeb64data(fd, filename, b64);
-	sodium_memzero(b64, sizeof(b64));
-	snprintf(header, sizeof(header), "-----END REOP %s-----\n", info);
-	writeall(fd, header, strlen(header), filename);
+	const char *keydata = encodekey(info, key, keylen, ident);
+	writeall(fd, keydata, strlen(keydata), filename);
+	freestr(keydata);
 	close(fd);
 }
 
@@ -719,6 +763,15 @@ parsesig(const char *sigdata, char *ident)
 	struct sig *sig = xmalloc(sizeof(*sig));
 	parsekeydata(sigdata, sig, sizeof(*sig), ident);
 	return sig;
+}
+
+/*
+ * encode a signature to a string
+ */
+const char *
+encodesig(const struct sig *sig, const char *ident)
+{
+	return encodekey("SIGNATURE", sig, sizeof(*sig), ident);
 }
 
 /*
