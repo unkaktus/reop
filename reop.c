@@ -344,20 +344,21 @@ writeb64data(int fd, const char *filename, char *b64)
 	}
 }
 
-/* this may be slow... and dangerous... */
 static void
-wraplines(char *str)
+wraplines(char *str, size_t space)
 {
-	size_t amt, rem;
+	size_t len, num;
 
-	rem = strlen(str);
-	while (rem > 76) {
-		amt = 76;
-		str += amt;
-		rem -= amt;
-		memmove(str + 1, str, rem + 1);
-		*str = '\n';
-		str++;
+	len = strlen(str);
+	num = (len - 1) / 76;
+	if (len + num + 1 > space)
+		return;
+	while (num > 0) {
+		size_t pos = 76 * num - 1;
+		size_t amt = len - pos < 76 ? len - pos : 76;
+		memmove(str + pos + num, str + pos, amt + 1);
+		str[pos + num] = '\n';
+		num--;
 	}
 }
 
@@ -624,7 +625,7 @@ encodekey(const char *info, const void *key, size_t keylen, const char *ident)
 
 	if (b64_ntop(key, keylen, b64, sizeof(b64)) == -1)
 		errx(1, "b64 encode failed");
-	wraplines(b64);
+	wraplines(b64, sizeof(b64));
 	snprintf(buf, sizeof(buf), "-----BEGIN REOP %s-----\n"
 	    "ident:%s\n"
 	    "%s\n"
