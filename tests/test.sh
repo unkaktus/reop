@@ -36,6 +36,9 @@ diff -u warn.txt danger.txt
 ../reop -Vq -p yourpub -x warn.txt.sig 2> error.log || true
 diff -u expected.log error.log
 
+../reop -Se -s yoursec -m warn.txt.sig -x double.sig
+../reop -Vq -p yourpub -x double.sig
+
 echo All passed.
 
 clean

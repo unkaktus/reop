@@ -865,9 +865,11 @@ verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet)
 	if (strncmp(msgdata, beginreopmsg, strlen(beginreopmsg)) != 0)
  		goto fail;
 	uint8_t *msg = msgdata + 36;
-	uint8_t *sigdata;
+	uint8_t *sigdata, *nextsig;
 	if (!(sigdata = strstr(msg, beginreopsig)))
  		goto fail;
+	while ((nextsig = strstr(sigdata + 1, beginreopsig)))
+		sigdata = nextsig;
 	uint64_t msglen = sigdata - msg;
 
 	char ident[IDENTLEN];
