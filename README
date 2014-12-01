@@ -1,20 +1,13 @@
 reop - reasonable expectation of privacy
 
-One of the obvious ideas I (and several others had) as soon as signify
-was released was to extend it to do more. After all, no program is complete
-until it can read email. Or at least munge up your email real bad.
+intro
+
+reop is a simple, semi-modern wannabe PGP clone.
+
+For early history and background, consult the original flak post:
+http://www.tedunangst.com/flak/post/reop
 
 reop
-
-With some curiosity I read Creating the perfect GPG keypair. My conclusion is
-that there’s no such thing has a perfect GPG key pair. And we wonder why
-people leak secrets using hotmail. This shouldn’t be hard.
-
-reop is clearly influenced by signify (What can I say? I like my own designs.),
-but it’s not a clone. Its handling of keys is the most significant difference
-(besides the obvious, more features). Default keys are supported, and you can
-even add all your pals to ~/.reop/pubkeyring and verify their messages
-automatically, just like a normal PGP program.
 
 Supported operations include signing -S and verifying -V messages, plus a
 variety of options for encrypting messages (-D -E). It does everything you’d
@@ -65,64 +58,19 @@ only asks questions that only the user can answer, and which the user should be
 able to answer. Fewer features -> fewer feature options -> fewer commands to
 edit, adjust, and otherwise tweak those options.
 
-security
-
-I’m guessing you’d rather hear about the fun crypto bits than my infallible
-programming skills.
+crypto
 
 All the crypto comes from nacl (indirectly via libsodium). Specifically,
 reop uses crypto_sign (Ed25519), crypto_box (Curve25519, Salsa20, and Poly1305)
 and crypto_secretbox (Salsa20 and Poly1305). I have not personally vetted these
 functions. Internet told me they were safe.
 
-One thing to note is that the crypto_box construction may not behave
-like other public key encryption schemes you are familiar with. It takes two
-key pairs; the receiver’s public key as expected and the sender’s secret key,
-which offers a measure of authentication.
-
-What the nacl documentation doesn’t really make clear is that same set of keys
-used for encrypting work for decrypting (i.e., it’s not asymmetric). For
-instance, if Alice, sending a message to Bob, encrypts with secAlice and
-pubBob, that would normally be decrypted by Bob with pubAlice and secBob. But
-secAlice and pubBob work just as well to decrypt. If you were expecting to
-encrypt some secret with a public key and then have that computer “forget” how
-to access the secret, that won’t work.
-
-reop used to work around this half-assedly. Now the workaround is at least
-3/4-assed. An ephemeral key is generated. The meat of the message is encrypted
-with secEph and pubBob. Then secEph is discarded. Now only pubEph and secBob
-can decrypt. To authenticate the message, we encrypt pubEph with secAlice
-and pubBob. Bob can authenticate the message with secBob and pubAlice, but he
-could also have forged the message, giving Alice deniability.
-
-This is something like what Noise Boxes would do, but which pub keys get
-encrypted are swapped. (reop doesn’t hide sender identity.)
-https://github.com/trevp/noise/wiki/Boxes
-
-While it's possible to do things the other way around and try to provide
-sender confidentiality, I'm not sure it's a good fit for reop. It doesn't
+While it's possible to use these constructions to provide sender
+confidentiality, I'm not sure it's a good fit for reop. It doesn't
 align with how the tool is likely to be used, and sender identity will most
 likely leak some other way. Better IMO to simply not make that promise.
 
 Nonces, where necessary, are generated randomly.
-
-[The next two paragraphs are a little dated;
-	reop is using libsodium wrappers now.]
-
-The nacl functions are all accessed via wrappers, very similar to the C++
-wrappers. The C nacl API requires the caller to provide padded buffers
-(i.e., ciphertext, auth tag, and zeroed scratch space all contiguous in memory),
-which is somewhat inconvenient for a program like reop. As a result, more
-memory is allocated and data copied than strictly mathematically necessary.
-Additionally, nacl has a “packet” interface, not a “stream” interface, which
-imposes some other limits on message size, but for most practical purposes it
-should be fine.
-
-It’s unfortunate, but I think nacl is the closest I’ve ever seen to a software
-interface that is perpendicular to the rest of the program. For a program that
-is essentially a CLI for nacl, reop spends considerable effort making sure that
-things are just so. The ZEROBYTES vs BOXZEROBYTES nonsense is just this side of
-ridiculous.
 
 limitations
 
@@ -143,12 +91,7 @@ reop doesn’t include a Tempest resistant font for viewing top zecret messages.
 
 code
 
-Should build most where, if you pick the right Makefile. Uses libsodium.
+Should build on OpenBSD with Makefile or elsewhere with GNUMakefile.
 
-I have endeavored to keep the code modular, such that it could be used in a
-library, but this is generally thwarted by the knowledge that top-level code
-has the privilege of simply giving up when things don’t go its way.
-Returning error codes -> having to check error codes.
-
-I’m not enamored with the parsing code. Too much pointer banging.
+Refer to the devnotes.txt file for more information about technical innards.
 
