@@ -127,6 +127,16 @@ struct oldekcmsg {
 	uint8_t box[ENCNONCEBYTES + ENCBOXBYTES];
 };
 
+struct reopseckey {
+	struct seckey seckey;
+	char ident[IDENTLEN];
+};
+
+struct reopsig {
+	struct sig sig;
+	char ident[IDENTLEN];
+};
+
 /* utility */
 static int
 xopen(const char *fname, int oflags, mode_t mode)
@@ -176,15 +186,6 @@ void
 freestr(const char *str)
 {
 	xfree((void *)str, strlen(str));
-}
-
-/*
- * allocate a new buffer large enough for an ident string
- */
-char *
-newident(void)
-{
-	return calloc(1, IDENTLEN);
 }
 
 /*
@@ -570,8 +571,8 @@ freepubkey(const struct pubkey *pubkey)
  * 1. specified file
  * 2. default seckey file
  */
-const struct seckey *
-getseckey(const char *seckeyfile, char *ident, kdf_allowstdin allowstdin)
+const struct reopseckey *
+reopgetseckey(const char *seckeyfile, char *ident, kdf_allowstdin allowstdin)
 {
 	char dummyident[IDENTLEN];
 	uint8_t symkey[SYMKEYBYTES];
@@ -580,7 +581,8 @@ getseckey(const char *seckeyfile, char *ident, kdf_allowstdin allowstdin)
 	if (!seckeyfile)
 		seckeyfile = gethomefile("seckey");
 
-	struct seckey *seckey = xmalloc(sizeof(*seckey));
+	struct reopseckey *reopseckey = xmalloc(sizeof(*reopseckey));
+	struct seckey *seckey = &reopseckey->seckey;
 
 	readkeyfile(seckeyfile, seckey, sizeof(*seckey), ident ? ident : dummyident);
 	if (memcmp(seckey->kdfalg, KDFALG, 2) != 0)
@@ -592,16 +594,31 @@ getseckey(const char *seckeyfile, char *ident, kdf_allowstdin allowstdin)
 	    seckey->box, symkey);
 	sodium_memzero(symkey, sizeof(symkey));
 
-	return seckey;
+	return reopseckey;
 }
+
+static const struct seckey *
+getseckey(const char *seckeyfile, char *ident, kdf_allowstdin allowstdin)
+{
+	return &reopgetseckey(seckeyfile, ident, allowstdin)->seckey;
+}
+
 
 /*
  * free seckey
  */
 void
+reopfreeseckey(const struct reopseckey *reopseckey)
+{
+	xfree((void *)reopseckey, sizeof(*reopseckey));
+}
+
+/* note that all callers actually pass a pointer to a reopseckey */
+static void
 freeseckey(const struct seckey *seckey)
 {
-	xfree((void *)seckey, sizeof(*seckey));
+
+	xfree((void *)seckey, sizeof(struct reopseckey));
 }
 
 /*
@@ -720,37 +737,38 @@ writesignedmsg(const char *filename, const struct sig *sig,
 /*
  * basic sign function
  */
-const struct sig *
-sign(const struct seckey *seckey, const uint8_t *msg, uint64_t msglen)
+const struct reopsig *
+reopsign(const struct reopseckey *reopseckey, const uint8_t *msg, uint64_t msglen)
 {
-	struct sig *sig = xmalloc(sizeof(*sig));
+	struct reopsig *reopsig = xmalloc(sizeof(*reopsig));
 
-	signraw(seckey->sigkey, msg, msglen, sig->sig);
+	signraw(reopseckey->seckey.sigkey, msg, msglen, reopsig->sig.sig);
 
-	memcpy(sig->fingerprint, seckey->fingerprint, FPLEN);
-	memcpy(sig->sigalg, SIGALG, 2);
+	memcpy(reopsig->sig.fingerprint, reopseckey->seckey.fingerprint, FPLEN);
+	memcpy(reopsig->sig.sigalg, SIGALG, 2);
+	strlcpy(reopsig->ident, reopseckey->ident, sizeof(reopsig->ident));
 
-	return sig;
+	return reopsig;
 }
 
 /*
  * free sig
  */
 void
-freesig(const struct sig *sig)
+reopfreesig(const struct reopsig *reopsig)
 {
-	xfree((void *)sig, sizeof(*sig));
+	xfree((void *)reopsig, sizeof(*reopsig));
 }
 
 /*
  * parse signature data into struct
  */
-const struct sig *
-parsesig(const char *sigdata, char *ident)
+const struct reopsig *
+reopparsesig(const char *sigdata)
 {
-	struct sig *sig = xmalloc(sizeof(*sig));
-	parsekeydata(sigdata, sig, sizeof(*sig), ident);
-	return sig;
+	struct reopsig *reopsig = xmalloc(sizeof(*reopsig));
+	parsekeydata(sigdata, &reopsig->sig, sizeof(reopsig->sig), reopsig->ident);
+	return reopsig;
 }
 
 /*
@@ -765,14 +783,14 @@ encodesig(const struct sig *sig, const char *ident)
 /*
  * read signature file
  */
-static const struct sig *
-readsigfile(const char *sigfile, char *ident)
+static const struct reopsig *
+readsigfile(const char *sigfile)
 {
 	uint64_t sigdatalen;
 	uint8_t *sigdata = readall(sigfile, &sigdatalen);
-	const struct sig *sig = parsesig(sigdata, ident);
+	const struct reopsig *reopsig = reopparsesig(sigdata);
 	xfree(sigdata, sigdatalen);
-	return sig;
+	return reopsig;
 }
 
 /*
@@ -787,19 +805,19 @@ signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
 
 	char ident[IDENTLEN];
 	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
-	const struct seckey *seckey = getseckey(seckeyfile, ident, allowstdin);
+	const struct reopseckey *reopseckey = reopgetseckey(seckeyfile, ident, allowstdin);
 
-	const struct sig *sig = sign(seckey, msg, msglen);
+	const struct reopsig *reopsig = reopsign(reopseckey, msg, msglen);
 
-	freeseckey(seckey);
+	reopfreeseckey(reopseckey);
 
 	if (embedded)
-		writesignedmsg(sigfile, sig, ident, msg, msglen);
+		writesignedmsg(sigfile, &reopsig->sig, reopsig->ident, msg, msglen);
 	else
-		writekeyfile(sigfile, "SIGNATURE", sig, sizeof(*sig), ident,
-		    O_TRUNC, 0666);
+		writekeyfile(sigfile, "SIGNATURE", &reopsig->sig, sizeof(reopsig->sig),
+		    reopsig->ident, O_TRUNC, 0666);
 
-	freesig(sig);
+	reopfreesig(reopsig);
 	xfree(msg, msglen);
 }
 
@@ -826,14 +844,14 @@ verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
 	uint8_t *msg = readall(msgfile, &msglen);
 
 	char ident[IDENTLEN];
-	const struct sig *sig = readsigfile(sigfile, ident);
+	const struct reopsig *reopsig = readsigfile(sigfile);
 	const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
 
-	verify(pubkey, msg, msglen, sig);
+	verify(pubkey, msg, msglen, &reopsig->sig);
 	if (!quiet)
 		printf("Signature Verified\n");
 
-	freesig(sig);
+	reopfreesig(reopsig);
 	freepubkey(pubkey);
 	xfree(msg, msglen);
 }
@@ -860,15 +878,14 @@ verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet)
 		sigdata = nextsig;
 	uint64_t msglen = sigdata - msg;
 
-	char ident[IDENTLEN];
-	const struct sig *sig = parsesig(sigdata, ident);
-	const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
+	const struct reopsig *reopsig = reopparsesig(sigdata);
+	const struct pubkey *pubkey = getpubkey(pubkeyfile, reopsig->ident);
 
-	verify(pubkey, msg, msglen, sig);
+	verify(pubkey, msg, msglen, &reopsig->sig);
 	if (!quiet)
 		printf("Signature Verified\n");
 
-	freesig(sig);
+	reopfreesig(reopsig);
 	freepubkey(pubkey);
 	xfree(msgdata, msgdatalen);
 

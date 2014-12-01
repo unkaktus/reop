@@ -14,9 +14,10 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-struct seckey;
+struct reopseckey;
+struct reopsig;
+
 struct pubkey;
-struct sig;
 struct symmsg;
 struct encmsg;
 
@@ -25,21 +26,20 @@ typedef struct { int v; } kdf_confirm;
 typedef struct { int v; } opt_binary;
 
 void freestr(const char *str);
-char *newident(void);
 
 const struct pubkey *getpubkey(const char *pubkeyfile, const char *ident);
 void freepubkey(const struct pubkey *pubkey);
 
-const struct seckey *getseckey(const char *seckeyfile, char *ident, kdf_allowstdin allowstdin);
-void freeseckey(const struct seckey *seckey);
+const struct reopseckey *reopgetseckey(const char *seckeyfile, char *ident, kdf_allowstdin allowstdin);
+void reopfreeseckey(const struct reopseckey *reopseckey);
 
 void generate(const char *pubkeyfile, const char *seckeyfile, int rounds, const char *ident);
 
-const struct sig *sign(const struct seckey *seckey, const uint8_t *msg, uint64_t msglen);
+const struct reopsig *reopsign(const struct reopseckey *seckey, const uint8_t *msg, uint64_t msglen);
 void signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
     int embedded);
 
-void freesig(const struct sig *sig);
+void reopfreesig(const struct reopsig *sig);
 const struct sig *parsesig(const char *sigdata, char *ident);
 const char *encodesig(const struct sig *sig, const char *ident);
 
