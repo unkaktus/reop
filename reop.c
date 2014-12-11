@@ -572,9 +572,8 @@ freepubkey(const struct pubkey *pubkey)
  * 2. default seckey file
  */
 const struct reopseckey *
-reopgetseckey(const char *seckeyfile, char *ident, kdf_allowstdin allowstdin)
+reopgetseckey(const char *seckeyfile, kdf_allowstdin allowstdin)
 {
-	char dummyident[IDENTLEN];
 	uint8_t symkey[SYMKEYBYTES];
 	kdf_confirm confirm = { 0 };
 
@@ -584,7 +583,7 @@ reopgetseckey(const char *seckeyfile, char *ident, kdf_allowstdin allowstdin)
 	struct reopseckey *reopseckey = xmalloc(sizeof(*reopseckey));
 	struct seckey *seckey = &reopseckey->seckey;
 
-	readkeyfile(seckeyfile, seckey, sizeof(*seckey), ident ? ident : dummyident);
+	readkeyfile(seckeyfile, seckey, sizeof(*seckey), reopseckey->ident);
 	if (memcmp(seckey->kdfalg, KDFALG, 2) != 0)
 		errx(1, "unsupported KDF");
 	int rounds = ntohl(seckey->kdfrounds);
@@ -597,13 +596,6 @@ reopgetseckey(const char *seckeyfile, char *ident, kdf_allowstdin allowstdin)
 	return reopseckey;
 }
 
-static const struct seckey *
-getseckey(const char *seckeyfile, char *ident, kdf_allowstdin allowstdin)
-{
-	return &reopgetseckey(seckeyfile, ident, allowstdin)->seckey;
-}
-
-
 /*
  * free seckey
  */
@@ -611,14 +603,6 @@ void
 reopfreeseckey(const struct reopseckey *reopseckey)
 {
 	xfree((void *)reopseckey, sizeof(*reopseckey));
-}
-
-/* note that all callers actually pass a pointer to a reopseckey */
-static void
-freeseckey(const struct seckey *seckey)
-{
-
-	xfree((void *)seckey, sizeof(struct reopseckey));
 }
 
 /*
@@ -803,9 +787,8 @@ signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
 	uint64_t msglen;
 	uint8_t *msg = readall(msgfile, &msglen);
 
-	char ident[IDENTLEN];
 	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
-	const struct reopseckey *reopseckey = reopgetseckey(seckeyfile, ident, allowstdin);
+	const struct reopseckey *reopseckey = reopgetseckey(seckeyfile, allowstdin);
 
 	const struct reopsig *reopsig = reopsign(reopseckey, msg, msglen);
 
@@ -953,16 +936,16 @@ void
 pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
     const char *msgfile, const char *encfile, opt_binary binary)
 {
-	char myident[IDENTLEN];
 	struct encmsg encmsg;
 	uint8_t ephseckey[ENCSECRETBYTES];
-	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 
 	uint64_t msglen;
 	uint8_t *msg = readall(msgfile, &msglen);
 
 	const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
-	const struct seckey *seckey = getseckey(seckeyfile, myident, allowstdin);
+	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
+	const struct reopseckey *reopseckey = reopgetseckey(seckeyfile, allowstdin);
+	const struct seckey *seckey = &reopseckey->seckey;
 
 	if (memcmp(pubkey->encalg, ENCKEYALG, 2) != 0)
 		errx(1, "unsupported key format");
@@ -976,11 +959,11 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	pubencryptraw(msg, msglen, encmsg.box, pubkey->enckey, ephseckey);
 	pubencryptraw(encmsg.ephpubkey, sizeof(encmsg.ephpubkey), encmsg.ephbox, pubkey->enckey, seckey->enckey);
 
-	freeseckey(seckey);
+	writeencfile(encfile, &encmsg, sizeof(encmsg), reopseckey->ident, msg, msglen, binary);
+
+	reopfreeseckey(reopseckey);
 	freepubkey(pubkey);
 	sodium_memzero(&ephseckey, sizeof(ephseckey));
-
-	writeencfile(encfile, &encmsg, sizeof(encmsg), myident, msg, msglen, binary);
 
 	xfree(msg, msglen);
 }
@@ -993,12 +976,12 @@ void
 v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
     const char *msgfile, const char *encfile, opt_binary binary)
 {
-	char myident[IDENTLEN];
 	struct oldencmsg oldencmsg;
-	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 
 	const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
-	const struct seckey *seckey = getseckey(seckeyfile, myident, allowstdin);
+	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
+	const struct reopseckey *reopseckey = reopgetseckey(seckeyfile, allowstdin);
+	const struct seckey *seckey = &reopseckey->seckey;
 
 	uint64_t msglen;
 	uint8_t *msg = readall(msgfile, &msglen);
@@ -1012,10 +995,10 @@ v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	memcpy(oldencmsg.secfingerprint, seckey->fingerprint, FPLEN);
 	pubencryptraw(msg, msglen, oldencmsg.box, pubkey->enckey, seckey->enckey);
 
-	freeseckey(seckey);
-	freepubkey(pubkey);
+	writeencfile(encfile, &oldencmsg, sizeof(oldencmsg), reopseckey->ident, msg, msglen, binary);
 
-	writeencfile(encfile, &oldencmsg, sizeof(oldencmsg), myident, msg, msglen, binary);
+	reopfreeseckey(reopseckey);
+	freepubkey(pubkey);
 
 	xfree(msg, msglen);
 }
@@ -1162,7 +1145,8 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		if (hdrsize != sizeof(hdr.encmsg))
 			goto fail;
 		const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
-		const struct seckey *seckey = getseckey(seckeyfile, NULL, allowstdin);
+		const struct reopseckey *reopseckey = reopgetseckey(seckeyfile, allowstdin);
+		const struct seckey *seckey = &reopseckey->seckey;
 		if (memcmp(hdr.encmsg.pubfingerprint, seckey->fingerprint, FPLEN) != 0 ||
 		    memcmp(hdr.encmsg.secfingerprint, pubkey->fingerprint, FPLEN) != 0)
 			goto fpfail;
@@ -1173,13 +1157,14 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 			errx(1, "unsupported key format");
 		pubdecryptraw(hdr.encmsg.ephpubkey, sizeof(hdr.encmsg.ephpubkey), hdr.encmsg.ephbox, pubkey->enckey, seckey->enckey);
 		pubdecryptraw(msg, msglen, hdr.encmsg.box, hdr.encmsg.ephpubkey, seckey->enckey);
-		freeseckey(seckey);
+		reopfreeseckey(reopseckey);
 		freepubkey(pubkey);
 	} else if (memcmp(hdr.alg, OLDENCALG, 2) == 0) {
 		if (hdrsize != sizeof(hdr.oldencmsg))
 			goto fail;
 		const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
-		const struct seckey *seckey = getseckey(seckeyfile, NULL, allowstdin);
+		const struct reopseckey *reopseckey = reopgetseckey(seckeyfile, allowstdin);
+		const struct seckey *seckey = &reopseckey->seckey;
 		/* pub/sec pairs work both ways */
 		if (memcmp(hdr.oldencmsg.pubfingerprint, pubkey->fingerprint, FPLEN) == 0) {
 			if (memcmp(hdr.oldencmsg.secfingerprint, seckey->fingerprint, FPLEN) != 0)
@@ -1193,17 +1178,18 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		if (memcmp(seckey->encalg, ENCKEYALG, 2) != 0)
 			errx(1, "unsupported key format");
 		pubdecryptraw(msg, msglen, hdr.oldencmsg.box, pubkey->enckey, seckey->enckey);
-		freeseckey(seckey);
+		reopfreeseckey(reopseckey);
 		freepubkey(pubkey);
 	} else if (memcmp(hdr.alg, OLDEKCALG, 2) == 0) {
 		if (hdrsize != sizeof(hdr.oldekcmsg))
 			goto fail;
-		const struct seckey *seckey = getseckey(seckeyfile, NULL, allowstdin);
+		const struct reopseckey *reopseckey = reopgetseckey(seckeyfile, allowstdin);
+		const struct seckey *seckey = &reopseckey->seckey;
 		if (memcmp(hdr.oldekcmsg.pubfingerprint, seckey->fingerprint, FPLEN) != 0)
 			goto fpfail;
 
 		pubdecryptraw(msg, msglen, hdr.oldekcmsg.box, hdr.oldekcmsg.pubkey, seckey->enckey);
-		freeseckey(seckey);
+		reopfreeseckey(reopseckey);
 	} else {
 		goto fail;
 	}

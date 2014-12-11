@@ -27,10 +27,10 @@ typedef struct { int v; } opt_binary;
 
 void reopfreestr(const char *str);
 
-const struct pubkey *getpubkey(const char *pubkeyfile, const char *ident);
+const struct reoppubkey *reopgetpubkey(const char *pubkeyfile, const char *ident);
 void freepubkey(const struct pubkey *pubkey);
 
-const struct reopseckey *reopgetseckey(const char *seckeyfile, char *ident, kdf_allowstdin allowstdin);
+const struct reopseckey *reopgetseckey(const char *seckeyfile, kdf_allowstdin allowstdin);
 void reopfreeseckey(const struct reopseckey *reopseckey);
 
 void generate(const char *pubkeyfile, const char *seckeyfile, int rounds, const char *ident);
