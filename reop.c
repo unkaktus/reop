@@ -183,7 +183,7 @@ xfree(void *p, size_t len)
 }
 
 void
-freestr(const char *str)
+reopfreestr(const char *str)
 {
 	xfree((void *)str, strlen(str));
 }
@@ -651,7 +651,7 @@ writekeyfile(const char *filename, const char *info, const void *key,
 	int fd = xopen(filename, O_CREAT|oflags|O_NOFOLLOW|O_WRONLY, mode);
 	const char *keydata = encodekey(info, key, keylen, ident);
 	writeall(fd, keydata, strlen(keydata), filename);
-	freestr(keydata);
+	reopfreestr(keydata);
 	close(fd);
 }
 
@@ -775,9 +775,9 @@ reopparsesig(const char *sigdata)
  * encode a signature to a string
  */
 const char *
-encodesig(const struct sig *sig, const char *ident)
+reopencodesig(const struct reopsig *reopsig)
 {
-	return encodekey("SIGNATURE", sig, sizeof(*sig), ident);
+	return encodekey("SIGNATURE", &reopsig->sig, sizeof(reopsig->sig), reopsig->ident);
 }
 
 /*

@@ -25,7 +25,7 @@ typedef struct { int v; } kdf_allowstdin;
 typedef struct { int v; } kdf_confirm;
 typedef struct { int v; } opt_binary;
 
-void freestr(const char *str);
+void reopfreestr(const char *str);
 
 const struct pubkey *getpubkey(const char *pubkeyfile, const char *ident);
 void freepubkey(const struct pubkey *pubkey);
@@ -40,11 +40,9 @@ void signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
     int embedded);
 
 void reopfreesig(const struct reopsig *sig);
-const struct sig *parsesig(const char *sigdata, char *ident);
-const char *encodesig(const struct sig *sig, const char *ident);
+const struct reopsig *reopparsesig(const char *sigdata);
+const char *reopencodesig(const struct reopsig *sig);
 
-void verify(const struct pubkey *pubkey, uint8_t *buf, uint64_t buflen,
-    const struct sig *sig);
 void verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
     int quiet);
 void verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet);
