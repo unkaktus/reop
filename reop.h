@@ -18,18 +18,25 @@ struct reopseckey;
 struct reoppubkey;
 struct reopsig;
 
+struct reopkeypair {
+	const struct reoppubkey *pubkey;
+	const struct reopseckey *seckey;
+};
+
 typedef struct { int v; } kdf_allowstdin;
 typedef struct { int v; } kdf_confirm;
 typedef struct { int v; } opt_binary;
 
-void
-reopgenerate(const struct reoppubkey **pubkeyout, const struct reopseckey **seckeyout,
-    int rounds, const char *ident);
+struct reopkeypair reopgenerate(int rounds, const char *ident);
 
 const struct reoppubkey *reopgetpubkey(const char *pubkeyfile, const char *ident);
+const struct reoppubkey *reopparsepubkey(const char *pubkeydata);
+const char *reopencodepubkey(const struct reoppubkey *pubkey);
 void reopfreepubkey(const struct reoppubkey *reoppubkey);
 
 const struct reopseckey *reopgetseckey(const char *seckeyfile, kdf_allowstdin allowstdin);
+const struct reopseckey *reopparseseckey(const char *seckeydata);
+const char *reopencodeseckey(const struct reopseckey *seckey);
 void reopfreeseckey(const struct reopseckey *reopseckey);
 
 const struct reopsig *reopsign(const struct reopseckey *seckey, const uint8_t *msg,

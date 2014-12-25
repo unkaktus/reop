@@ -646,11 +646,10 @@ writekeyfile(const char *filename, const char *info, const void *key,
 }
 
 /*
- * generate two key pairs, one for signing and one for encryption.
+ * generate a complete key pair (actually two, for signing and encryption)
  */
-void
-reopgenerate(const struct reoppubkey **pubkeyout, const struct reopseckey **seckeyout,
-    int rounds, const char *ident)
+struct reopkeypair
+reopgenerate(int rounds, const char *ident)
 {
 	uint8_t symkey[SYMKEYBYTES];
 	uint8_t fingerprint[FPLEN];
@@ -690,31 +689,72 @@ reopgenerate(const struct reoppubkey **pubkeyout, const struct reopseckey **seck
 	memcpy(pubkey->sigalg, SIGALG, 2);
 	memcpy(pubkey->encalg, ENCKEYALG, 2);
 
-	*pubkeyout = reoppubkey;
-	*seckeyout = reopseckey;
+	struct reopkeypair keypair = { reoppubkey, reopseckey };
+	return keypair;
+}
+
+/*
+ * parse pubkey data into struct
+ */
+const struct reoppubkey *
+reopparsepubkey(const char *pubkeydata)
+{
+	struct reoppubkey *reoppubkey = xmalloc(sizeof(*reoppubkey));
+	parsekeydata(pubkeydata, &reoppubkey->pubkey, sizeof(reoppubkey->pubkey),
+	    reoppubkey->ident);
+	return reoppubkey;
+}
+
+/*
+ * encode a pubkey to a string
+ */
+const char *
+reopencodepubkey(const struct reoppubkey *reoppubkey)
+{
+	return encodekey("PUBLIC KEY", &reoppubkey->pubkey, sizeof(reoppubkey->pubkey),
+	    reoppubkey->ident);
+}
+
+/*
+ * parse seckey data into struct
+ */
+const struct reopseckey *
+reopparseseckey(const char *seckeydata)
+{
+	struct reopseckey *reopseckey = xmalloc(sizeof(*reopseckey));
+	parsekeydata(seckeydata, &reopseckey->seckey, sizeof(reopseckey->seckey),
+	    reopseckey->ident);
+	return reopseckey;
+}
+
+/*
+ * encode a seckey to a string
+ */
+const char *
+reopencodeseckey(const struct reopseckey *reopseckey)
+{
+	return encodekey("SECRET KEY", &reopseckey->seckey, sizeof(reopseckey->seckey),
+	    reopseckey->ident);
 }
 
 void
 generate(const char *pubkeyfile, const char *seckeyfile,
     int rounds, const char *ident)
 {
-	const struct reoppubkey *reoppubkey;
-	const struct reopseckey *reopseckey;
-
-	reopgenerate(&reoppubkey, &reopseckey, rounds, ident);
+	struct reopkeypair keypair = reopgenerate(rounds, ident);
 
 	if (!seckeyfile)
 		seckeyfile = gethomefile("seckey");
-	writekeyfile(seckeyfile, "SECRET KEY", &reopseckey->seckey, sizeof(reopseckey->seckey),
-	    ident, O_EXCL, 0600);
+	writekeyfile(seckeyfile, "SECRET KEY", &keypair.seckey->seckey,
+	    sizeof(keypair.seckey->seckey), ident, O_EXCL, 0600);
 
 	if (!pubkeyfile)
 		pubkeyfile = gethomefile("pubkey");
-	writekeyfile(pubkeyfile, "PUBLIC KEY", &reoppubkey->pubkey, sizeof(reoppubkey->pubkey),
-	    ident, O_EXCL, 0666);
+	writekeyfile(pubkeyfile, "PUBLIC KEY", &keypair.pubkey->pubkey,
+	    sizeof(keypair.pubkey->pubkey), ident, O_EXCL, 0666);
 
-	reopfreepubkey(reoppubkey);
-	reopfreeseckey(reopseckey);
+	reopfreepubkey(keypair.pubkey);
+	reopfreeseckey(keypair.seckey);
 }
 
 /*
