@@ -137,6 +137,11 @@ struct reopsig {
 	char ident[IDENTLEN];
 };
 
+struct reoppubkey {
+	struct pubkey pubkey;
+	char ident[IDENTLEN];
+};
+
 /* utility */
 static int
 xopen(const char *fname, int oflags, mode_t mode)
@@ -538,33 +543,34 @@ findpubkey(const char *ident)
  * 2. lookup ident
  * 3. default pubkey file
  */
-const struct pubkey *
-getpubkey(const char *pubkeyfile, const char *ident)
+const struct reoppubkey *
+reopgetpubkey(const char *pubkeyfile, const char *ident)
 {
-	char dummyident[IDENTLEN];
+	struct reoppubkey *reoppubkey = xmalloc(sizeof(*reoppubkey));
 
-	struct pubkey *pubkey = xmalloc(sizeof(*pubkey));
 	if (!pubkeyfile && ident) {
 		const struct pubkey *identkey;
 		if ((identkey = findpubkey(ident))) {
-			*pubkey = *identkey;
-			return pubkey;
+			reoppubkey->pubkey = *identkey;
+			strlcpy(reoppubkey->ident, ident, sizeof(reoppubkey));
+			return reoppubkey;
 		}
 		errx(1, "unable to find a pubkey for %s", ident);
 	}
 	if (!pubkeyfile)
 		pubkeyfile = gethomefile("pubkey");
-	readkeyfile(pubkeyfile, pubkey, sizeof(*pubkey), dummyident);
-	return pubkey;
+	readkeyfile(pubkeyfile, &reoppubkey->pubkey, sizeof(reoppubkey->pubkey),
+	    reoppubkey->ident);
+	return reoppubkey;
 }
 
 /*
  * free pubkey
  */
 void
-freepubkey(const struct pubkey *pubkey)
+reopfreepubkey(const struct reoppubkey *reoppubkey)
 {
-	xfree((void *)pubkey, sizeof(*pubkey));
+	xfree((void *)reoppubkey, sizeof(*reoppubkey));
 }
 
 /*
@@ -828,14 +834,14 @@ verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
 
 	char ident[IDENTLEN];
 	const struct reopsig *reopsig = readsigfile(sigfile);
-	const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
+	const struct reoppubkey *reoppubkey = reopgetpubkey(pubkeyfile, ident);
 
-	verify(pubkey, msg, msglen, &reopsig->sig);
+	verify(&reoppubkey->pubkey, msg, msglen, &reopsig->sig);
 	if (!quiet)
 		printf("Signature Verified\n");
 
 	reopfreesig(reopsig);
-	freepubkey(pubkey);
+	reopfreepubkey(reoppubkey);
 	xfree(msg, msglen);
 }
 
@@ -862,14 +868,14 @@ verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet)
 	uint64_t msglen = sigdata - msg;
 
 	const struct reopsig *reopsig = reopparsesig(sigdata);
-	const struct pubkey *pubkey = getpubkey(pubkeyfile, reopsig->ident);
+	const struct reoppubkey *reoppubkey = reopgetpubkey(pubkeyfile, reopsig->ident);
 
-	verify(pubkey, msg, msglen, &reopsig->sig);
+	verify(&reoppubkey->pubkey, msg, msglen, &reopsig->sig);
 	if (!quiet)
 		printf("Signature Verified\n");
 
 	reopfreesig(reopsig);
-	freepubkey(pubkey);
+	reopfreepubkey(reoppubkey);
 	xfree(msgdata, msgdatalen);
 
 	return;
@@ -942,7 +948,8 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	uint64_t msglen;
 	uint8_t *msg = readall(msgfile, &msglen);
 
-	const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
+	const struct reoppubkey *reoppubkey = reopgetpubkey(pubkeyfile, ident);
+	const struct pubkey *pubkey = &reoppubkey->pubkey;
 	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 	const struct reopseckey *reopseckey = reopgetseckey(seckeyfile, allowstdin);
 	const struct seckey *seckey = &reopseckey->seckey;
@@ -962,7 +969,7 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	writeencfile(encfile, &encmsg, sizeof(encmsg), reopseckey->ident, msg, msglen, binary);
 
 	reopfreeseckey(reopseckey);
-	freepubkey(pubkey);
+	reopfreepubkey(reoppubkey);
 	sodium_memzero(&ephseckey, sizeof(ephseckey));
 
 	xfree(msg, msglen);
@@ -978,7 +985,8 @@ v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 {
 	struct oldencmsg oldencmsg;
 
-	const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
+	const struct reoppubkey *reoppubkey = reopgetpubkey(pubkeyfile, ident);
+	const struct pubkey *pubkey = &reoppubkey->pubkey;
 	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 	const struct reopseckey *reopseckey = reopgetseckey(seckeyfile, allowstdin);
 	const struct seckey *seckey = &reopseckey->seckey;
@@ -998,7 +1006,7 @@ v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	writeencfile(encfile, &oldencmsg, sizeof(oldencmsg), reopseckey->ident, msg, msglen, binary);
 
 	reopfreeseckey(reopseckey);
-	freepubkey(pubkey);
+	reopfreepubkey(reoppubkey);
 
 	xfree(msg, msglen);
 }
@@ -1144,7 +1152,8 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 	} else if (memcmp(hdr.alg, ENCALG, 2) == 0) {
 		if (hdrsize != sizeof(hdr.encmsg))
 			goto fail;
-		const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
+		const struct reoppubkey *reoppubkey = reopgetpubkey(pubkeyfile, ident);
+		const struct pubkey *pubkey = &reoppubkey->pubkey;
 		const struct reopseckey *reopseckey = reopgetseckey(seckeyfile, allowstdin);
 		const struct seckey *seckey = &reopseckey->seckey;
 		if (memcmp(hdr.encmsg.pubfingerprint, seckey->fingerprint, FPLEN) != 0 ||
@@ -1158,11 +1167,12 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		pubdecryptraw(hdr.encmsg.ephpubkey, sizeof(hdr.encmsg.ephpubkey), hdr.encmsg.ephbox, pubkey->enckey, seckey->enckey);
 		pubdecryptraw(msg, msglen, hdr.encmsg.box, hdr.encmsg.ephpubkey, seckey->enckey);
 		reopfreeseckey(reopseckey);
-		freepubkey(pubkey);
+		reopfreepubkey(reoppubkey);
 	} else if (memcmp(hdr.alg, OLDENCALG, 2) == 0) {
 		if (hdrsize != sizeof(hdr.oldencmsg))
 			goto fail;
-		const struct pubkey *pubkey = getpubkey(pubkeyfile, ident);
+		const struct reoppubkey *reoppubkey = reopgetpubkey(pubkeyfile, ident);
+		const struct pubkey *pubkey = &reoppubkey->pubkey;
 		const struct reopseckey *reopseckey = reopgetseckey(seckeyfile, allowstdin);
 		const struct seckey *seckey = &reopseckey->seckey;
 		/* pub/sec pairs work both ways */
@@ -1179,7 +1189,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 			errx(1, "unsupported key format");
 		pubdecryptraw(msg, msglen, hdr.oldencmsg.box, pubkey->enckey, seckey->enckey);
 		reopfreeseckey(reopseckey);
-		freepubkey(pubkey);
+		reopfreepubkey(reoppubkey);
 	} else if (memcmp(hdr.alg, OLDEKCALG, 2) == 0) {
 		if (hdrsize != sizeof(hdr.oldekcmsg))
 			goto fail;
