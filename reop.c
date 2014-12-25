@@ -649,52 +649,72 @@ writekeyfile(const char *filename, const char *info, const void *key,
  * generate two key pairs, one for signing and one for encryption.
  */
 void
-generate(const char *pubkeyfile, const char *seckeyfile, int rounds,
-    const char *ident)
+reopgenerate(const struct reoppubkey **pubkeyout, const struct reopseckey **seckeyout,
+    int rounds, const char *ident)
 {
-	struct pubkey pubkey;
-	struct seckey seckey;
 	uint8_t symkey[SYMKEYBYTES];
 	uint8_t fingerprint[FPLEN];
 	kdf_allowstdin allowstdin = { 1 };
 	kdf_confirm confirm = { 1 };
 
-	if (!seckeyfile)
-		seckeyfile = gethomefile("seckey");
+	struct reoppubkey *reoppubkey = xmalloc(sizeof(*reoppubkey));
+	struct reopseckey *reopseckey = xmalloc(sizeof(*reopseckey));
 
-	memset(&pubkey, 0, sizeof(pubkey));
-	memset(&seckey, 0, sizeof(seckey));
+	memset(reoppubkey, 0, sizeof(*reoppubkey));
+	memset(reopseckey, 0, sizeof(*reopseckey));
+	struct pubkey *pubkey = &reoppubkey->pubkey;
+	struct seckey *seckey = &reopseckey->seckey;
 
-	crypto_sign_ed25519_keypair(pubkey.sigkey, seckey.sigkey);
-	crypto_box_keypair(pubkey.enckey, seckey.enckey);
+	strlcpy(reoppubkey->ident, ident, sizeof(reoppubkey->ident));
+	strlcpy(reopseckey->ident, ident, sizeof(reopseckey->ident));
+
+	crypto_sign_ed25519_keypair(pubkey->sigkey, seckey->sigkey);
+	crypto_box_keypair(pubkey->enckey, seckey->enckey);
 	randombytes(fingerprint, sizeof(fingerprint));
 
-	memcpy(seckey.fingerprint, fingerprint, FPLEN);
-	memcpy(seckey.sigalg, SIGALG, 2);
-	memcpy(seckey.encalg, ENCKEYALG, 2);
-	memcpy(seckey.symalg, SYMALG, 2);
-	memcpy(seckey.kdfalg, KDFALG, 2);
-	seckey.kdfrounds = htonl(rounds);
-	randombytes(seckey.salt, sizeof(seckey.salt));
+	memcpy(seckey->fingerprint, fingerprint, FPLEN);
+	memcpy(seckey->sigalg, SIGALG, 2);
+	memcpy(seckey->encalg, ENCKEYALG, 2);
+	memcpy(seckey->symalg, SYMALG, 2);
+	memcpy(seckey->kdfalg, KDFALG, 2);
+	seckey->kdfrounds = htonl(rounds);
+	randombytes(seckey->salt, sizeof(seckey->salt));
 
-	kdf(seckey.salt, sizeof(seckey.salt), rounds, allowstdin, confirm,
+	kdf(seckey->salt, sizeof(seckey->salt), rounds, allowstdin, confirm,
 	    symkey, sizeof(symkey));
-	symencryptraw(seckey.sigkey, sizeof(seckey.sigkey) + sizeof(seckey.enckey),
-	    seckey.box, symkey);
+	symencryptraw(seckey->sigkey, sizeof(seckey->sigkey) + sizeof(seckey->enckey),
+	    seckey->box, symkey);
 	sodium_memzero(symkey, sizeof(symkey));
 
-	writekeyfile(seckeyfile, "SECRET KEY", &seckey, sizeof(seckey),
-	    ident, O_EXCL, 0600);
-	sodium_memzero(&seckey, sizeof(seckey));
+	memcpy(pubkey->fingerprint, fingerprint, FPLEN);
+	memcpy(pubkey->sigalg, SIGALG, 2);
+	memcpy(pubkey->encalg, ENCKEYALG, 2);
 
-	memcpy(pubkey.fingerprint, fingerprint, FPLEN);
-	memcpy(pubkey.sigalg, SIGALG, 2);
-	memcpy(pubkey.encalg, ENCKEYALG, 2);
+	*pubkeyout = reoppubkey;
+	*seckeyout = reopseckey;
+}
+
+void
+generate(const char *pubkeyfile, const char *seckeyfile,
+    int rounds, const char *ident)
+{
+	const struct reoppubkey *reoppubkey;
+	const struct reopseckey *reopseckey;
+
+	reopgenerate(&reoppubkey, &reopseckey, rounds, ident);
+
+	if (!seckeyfile)
+		seckeyfile = gethomefile("seckey");
+	writekeyfile(seckeyfile, "SECRET KEY", &reopseckey->seckey, sizeof(reopseckey->seckey),
+	    ident, O_EXCL, 0600);
 
 	if (!pubkeyfile)
 		pubkeyfile = gethomefile("pubkey");
-	writekeyfile(pubkeyfile, "PUBLIC KEY", &pubkey, sizeof(pubkey),
+	writekeyfile(pubkeyfile, "PUBLIC KEY", &reoppubkey->pubkey, sizeof(reoppubkey->pubkey),
 	    ident, O_EXCL, 0666);
+
+	reopfreepubkey(reoppubkey);
+	reopfreeseckey(reopseckey);
 }
 
 /*

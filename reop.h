@@ -22,7 +22,9 @@ typedef struct { int v; } kdf_allowstdin;
 typedef struct { int v; } kdf_confirm;
 typedef struct { int v; } opt_binary;
 
-void reopfreestr(const char *str);
+void
+reopgenerate(const struct reoppubkey **pubkeyout, const struct reopseckey **seckeyout,
+    int rounds, const char *ident);
 
 const struct reoppubkey *reopgetpubkey(const char *pubkeyfile, const char *ident);
 void reopfreepubkey(const struct reoppubkey *reoppubkey);
@@ -30,12 +32,16 @@ void reopfreepubkey(const struct reoppubkey *reoppubkey);
 const struct reopseckey *reopgetseckey(const char *seckeyfile, kdf_allowstdin allowstdin);
 void reopfreeseckey(const struct reopseckey *reopseckey);
 
-const struct reopsig *reopsign(const struct reopseckey *seckey, const uint8_t *msg, uint64_t msglen);
-void reopverify(const struct reoppubkey *reoppubkey, uint8_t *msg, uint64_t msglen, const struct reopsig *reopsig);
+const struct reopsig *reopsign(const struct reopseckey *seckey, const uint8_t *msg,
+    uint64_t msglen);
+void reopverify(const struct reoppubkey *reoppubkey, uint8_t *msg, uint64_t msglen,
+    const struct reopsig *reopsig);
 
-void reopfreesig(const struct reopsig *sig);
 const struct reopsig *reopparsesig(const char *sigdata);
 const char *reopencodesig(const struct reopsig *sig);
+void reopfreesig(const struct reopsig *sig);
+
+void reopfreestr(const char *str);
 
 /* application code; yet to be converted */
 struct pubkey;
