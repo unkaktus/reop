@@ -31,6 +31,7 @@ const struct reopseckey *reopgetseckey(const char *seckeyfile, kdf_allowstdin al
 void reopfreeseckey(const struct reopseckey *reopseckey);
 
 const struct reopsig *reopsign(const struct reopseckey *seckey, const uint8_t *msg, uint64_t msglen);
+void reopverify(const struct reoppubkey *reoppubkey, uint8_t *msg, uint64_t msglen, const struct reopsig *reopsig);
 
 void reopfreesig(const struct reopsig *sig);
 const struct reopsig *reopparsesig(const char *sigdata);

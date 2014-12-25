@@ -814,12 +814,12 @@ signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
  * basic verify function
  */
 void
-verify(const struct pubkey *pubkey, uint8_t *buf, uint64_t buflen,
-    const struct sig *sig)
+reopverify(const struct reoppubkey *reoppubkey, uint8_t *msg, uint64_t msglen,
+    const struct reopsig *reopsig)
 {
-	if (memcmp(pubkey->fingerprint, sig->fingerprint, FPLEN) != 0)
+	if (memcmp(reoppubkey->pubkey.fingerprint, reopsig->sig.fingerprint, FPLEN) != 0)
 		errx(1, "verification failed: checked against wrong key");
-	verifyraw(pubkey->sigkey, buf, buflen, sig->sig);
+	verifyraw(reoppubkey->pubkey.sigkey, msg, msglen, reopsig->sig.sig);
 }
 
 /*
@@ -836,7 +836,7 @@ verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
 	const struct reopsig *reopsig = readsigfile(sigfile);
 	const struct reoppubkey *reoppubkey = reopgetpubkey(pubkeyfile, ident);
 
-	verify(&reoppubkey->pubkey, msg, msglen, &reopsig->sig);
+	reopverify(reoppubkey, msg, msglen, reopsig);
 	if (!quiet)
 		printf("Signature Verified\n");
 
@@ -870,7 +870,7 @@ verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet)
 	const struct reopsig *reopsig = reopparsesig(sigdata);
 	const struct reoppubkey *reoppubkey = reopgetpubkey(pubkeyfile, reopsig->ident);
 
-	verify(&reoppubkey->pubkey, msg, msglen, &reopsig->sig);
+	reopverify(reoppubkey, msg, msglen, reopsig);
 	if (!quiet)
 		printf("Signature Verified\n");
 
