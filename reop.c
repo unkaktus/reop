@@ -270,7 +270,7 @@ signraw(const uint8_t *seckey, const uint8_t *buf, uint64_t buflen,
  * wrapper around crypto_sign_open supporting detached signatures
  */
 static void
-verifyraw(const uint8_t *pubkey, uint8_t *buf, uint64_t buflen,
+verifyraw(const uint8_t *pubkey, const uint8_t *buf, uint64_t buflen,
     const uint8_t *sig)
 {
 	if (crypto_sign_verify_detached(sig, buf, buflen, pubkey) == -1)
@@ -874,7 +874,7 @@ signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
  * basic verify function
  */
 void
-reopverify(const struct reoppubkey *reoppubkey, uint8_t *msg, uint64_t msglen,
+reopverify(const struct reoppubkey *reoppubkey, const uint8_t *msg, uint64_t msglen,
     const struct reopsig *reopsig)
 {
 	if (memcmp(reoppubkey->pubkey.fingerprint, reopsig->sig.fingerprint, FPLEN) != 0)
