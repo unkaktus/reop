@@ -475,6 +475,37 @@ kdf(uint8_t *salt, size_t saltlen, int rounds, kdf_allowstdin allowstdin,
 	sodium_memzero(pass, sizeof(pass));
 }
 
+void
+encryptseckey(struct seckey *seckey)
+{
+	uint8_t symkey[SYMKEYBYTES];
+	kdf_allowstdin allowstdin = { 1 };
+	kdf_confirm confirm = { 1 };
+	int rounds = ntohl(seckey->kdfrounds);
+
+	kdf(seckey->salt, sizeof(seckey->salt), rounds, allowstdin, confirm,
+	    symkey, sizeof(symkey));
+	symencryptraw(seckey->sigkey, sizeof(seckey->sigkey) + sizeof(seckey->enckey),
+	    seckey->box, symkey);
+	sodium_memzero(symkey, sizeof(symkey));
+}
+
+void
+decryptseckey(struct seckey *seckey, kdf_allowstdin allowstdin)
+{
+	uint8_t symkey[SYMKEYBYTES];
+	kdf_confirm confirm = { 0 };
+
+	if (memcmp(seckey->kdfalg, KDFALG, 2) != 0)
+		errx(1, "unsupported KDF");
+	int rounds = ntohl(seckey->kdfrounds);
+	kdf(seckey->salt, sizeof(seckey->salt), rounds,
+	    allowstdin, confirm, symkey, sizeof(symkey));
+	symdecryptraw(seckey->sigkey, sizeof(seckey->sigkey) + sizeof(seckey->enckey),
+	    seckey->box, symkey);
+	sodium_memzero(symkey, sizeof(symkey));
+}
+
 /*
  * read user's pubkeyring file to allow lookup by ident
  */
@@ -580,9 +611,6 @@ reopfreepubkey(const struct reoppubkey *reoppubkey)
 const struct reopseckey *
 reopgetseckey(const char *seckeyfile, kdf_allowstdin allowstdin)
 {
-	uint8_t symkey[SYMKEYBYTES];
-	kdf_confirm confirm = { 0 };
-
 	if (!seckeyfile)
 		seckeyfile = gethomefile("seckey");
 
@@ -590,15 +618,7 @@ reopgetseckey(const char *seckeyfile, kdf_allowstdin allowstdin)
 	struct seckey *seckey = &reopseckey->seckey;
 
 	readkeyfile(seckeyfile, seckey, sizeof(*seckey), reopseckey->ident);
-	if (memcmp(seckey->kdfalg, KDFALG, 2) != 0)
-		errx(1, "unsupported KDF");
-	int rounds = ntohl(seckey->kdfrounds);
-	kdf(seckey->salt, sizeof(seckey->salt), rounds,
-	    allowstdin, confirm, symkey, sizeof(symkey));
-	symdecryptraw(seckey->sigkey, sizeof(seckey->sigkey) + sizeof(seckey->enckey),
-	    seckey->box, symkey);
-	sodium_memzero(symkey, sizeof(symkey));
-
+	decryptseckey(seckey, allowstdin);
 	return reopseckey;
 }
 
@@ -651,17 +671,14 @@ writekeyfile(const char *filename, const char *info, const void *key,
 struct reopkeypair
 reopgenerate(int rounds, const char *ident)
 {
-	uint8_t symkey[SYMKEYBYTES];
 	uint8_t fingerprint[FPLEN];
-	kdf_allowstdin allowstdin = { 1 };
-	kdf_confirm confirm = { 1 };
 
 	struct reoppubkey *reoppubkey = xmalloc(sizeof(*reoppubkey));
-	struct reopseckey *reopseckey = xmalloc(sizeof(*reopseckey));
-
 	memset(reoppubkey, 0, sizeof(*reoppubkey));
-	memset(reopseckey, 0, sizeof(*reopseckey));
 	struct pubkey *pubkey = &reoppubkey->pubkey;
+
+	struct reopseckey *reopseckey = xmalloc(sizeof(*reopseckey));
+	memset(reopseckey, 0, sizeof(*reopseckey));
 	struct seckey *seckey = &reopseckey->seckey;
 
 	strlcpy(reoppubkey->ident, ident, sizeof(reoppubkey->ident));
@@ -678,12 +695,6 @@ reopgenerate(int rounds, const char *ident)
 	memcpy(seckey->kdfalg, KDFALG, 2);
 	seckey->kdfrounds = htonl(rounds);
 	randombytes(seckey->salt, sizeof(seckey->salt));
-
-	kdf(seckey->salt, sizeof(seckey->salt), rounds, allowstdin, confirm,
-	    symkey, sizeof(symkey));
-	symencryptraw(seckey->sigkey, sizeof(seckey->sigkey) + sizeof(seckey->enckey),
-	    seckey->box, symkey);
-	sodium_memzero(symkey, sizeof(symkey));
 
 	memcpy(pubkey->fingerprint, fingerprint, FPLEN);
 	memcpy(pubkey->sigalg, SIGALG, 2);
@@ -724,6 +735,9 @@ reopparseseckey(const char *seckeydata)
 	struct reopseckey *reopseckey = xmalloc(sizeof(*reopseckey));
 	parsekeydata(seckeydata, &reopseckey->seckey, sizeof(reopseckey->seckey),
 	    reopseckey->ident);
+
+	kdf_allowstdin allowstdin = { 0 };
+	decryptseckey(&reopseckey->seckey, allowstdin);
 	return reopseckey;
 }
 
@@ -733,23 +747,28 @@ reopparseseckey(const char *seckeydata)
 const char *
 reopencodeseckey(const struct reopseckey *reopseckey)
 {
-	return encodekey("SECRET KEY", &reopseckey->seckey, sizeof(reopseckey->seckey),
+	struct seckey seckey = reopseckey->seckey;
+	encryptseckey(&seckey);
+	const char *rv = encodekey("SECRET KEY", &seckey, sizeof(seckey),
 	    reopseckey->ident);
+	sodium_memzero(&seckey, sizeof(seckey));
+	return rv;
 }
 
 void
 generate(const char *pubkeyfile, const char *seckeyfile,
     int rounds, const char *ident)
 {
-	struct reopkeypair keypair = reopgenerate(rounds, ident);
-
-	if (!seckeyfile)
-		seckeyfile = gethomefile("seckey");
-	writekeyfile(seckeyfile, "SECRET KEY", &keypair.seckey->seckey,
-	    sizeof(keypair.seckey->seckey), ident, O_EXCL, 0600);
-
 	if (!pubkeyfile)
 		pubkeyfile = gethomefile("pubkey");
+	if (!seckeyfile)
+		seckeyfile = gethomefile("seckey");
+
+	struct reopkeypair keypair = reopgenerate(rounds, ident);
+	encryptseckey((struct seckey *)&keypair.seckey->seckey);
+
+	writekeyfile(seckeyfile, "SECRET KEY", &keypair.seckey->seckey,
+	    sizeof(keypair.seckey->seckey), ident, O_EXCL, 0600);
 	writekeyfile(pubkeyfile, "PUBLIC KEY", &keypair.pubkey->pubkey,
 	    sizeof(keypair.pubkey->pubkey), ident, O_EXCL, 0666);
 
