@@ -41,7 +41,7 @@ diff -u expected.log error.log
 
 echo C passed.
 
-if [ -f ../libreop.so ] && luajit -v > /dev/null ; then
+if [ -f ../libreop.so.* ] && luajit -v > /dev/null ; then
 	luajit test.lua
 else
 	echo Skipping lua tests.
