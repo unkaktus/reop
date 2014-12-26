@@ -39,6 +39,14 @@ diff -u expected.log error.log
 ../reop -Se -s yoursec -m warn.txt.sig -x double.sig
 ../reop -Vq -p yourpub -x double.sig
 
+echo C passed.
+
+if luajit -v > /dev/null ; then
+	luajit test.lua
+else
+	echo Skipping lua tests
+fi
+
 echo All passed.
 
 clean
