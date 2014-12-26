@@ -5,7 +5,7 @@ set -e
 clean() {
 	rm -fr fakehome
 	rm -f mypub mysec yourpub yoursec
-	rm -f trip.txt warn.txt.enc warn.txt.sig danger.txt
+	rm -f double.sig trip.txt warn.txt.enc warn.txt.sig danger.txt
 	rm -f error.log
 }
 
@@ -41,10 +41,10 @@ diff -u expected.log error.log
 
 echo C passed.
 
-if luajit -v > /dev/null ; then
+if [ -f ../libreop.so ] && luajit -v > /dev/null ; then
 	luajit test.lua
 else
-	echo Skipping lua tests
+	echo Skipping lua tests.
 fi
 
 echo All passed.
