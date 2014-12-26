@@ -69,33 +69,6 @@
 #define REOP_BINARY "RBF"
 
 /* metadata */
-struct seckey {
-	uint8_t sigalg[2];
-	uint8_t encalg[2];
-	uint8_t symalg[2];
-	uint8_t kdfalg[2];
-	uint8_t fingerprint[FPLEN];
-	uint32_t kdfrounds;
-	uint8_t salt[16];
-	uint8_t box[SYMNONCEBYTES + SYMBOXBYTES];
-	uint8_t sigkey[SIGSECRETBYTES];
-	uint8_t enckey[ENCSECRETBYTES];
-};
-
-struct pubkey {
-	uint8_t sigalg[2];
-	uint8_t encalg[2];
-	uint8_t fingerprint[FPLEN];
-	uint8_t sigkey[SIGPUBLICBYTES];
-	uint8_t enckey[ENCPUBLICBYTES];
-};
-
-struct sig {
-	uint8_t sigalg[2];
-	uint8_t fingerprint[FPLEN];
-	uint8_t sig[SIGBYTES];
-};
-
 struct symmsg {
 	uint8_t symalg[2];
 	uint8_t kdfalg[2];
@@ -128,19 +101,37 @@ struct oldekcmsg {
 };
 
 struct reopseckey {
-	struct seckey seckey;
+	uint8_t sigalg[2];
+	uint8_t encalg[2];
+	uint8_t symalg[2];
+	uint8_t kdfalg[2];
+	uint8_t fingerprint[FPLEN];
+	uint32_t kdfrounds;
+	uint8_t salt[16];
+	uint8_t box[SYMNONCEBYTES + SYMBOXBYTES];
+	uint8_t sigkey[SIGSECRETBYTES];
+	uint8_t enckey[ENCSECRETBYTES];
 	char ident[IDENTLEN];
 };
+const size_t seckeysize = offsetof(struct reopseckey, ident);
 
 struct reopsig {
-	struct sig sig;
+	uint8_t sigalg[2];
+	uint8_t fingerprint[FPLEN];
+	uint8_t sig[SIGBYTES];
 	char ident[IDENTLEN];
 };
+const size_t sigsize = offsetof(struct reopsig, ident);
 
 struct reoppubkey {
-	struct pubkey pubkey;
+	uint8_t sigalg[2];
+	uint8_t encalg[2];
+	uint8_t fingerprint[FPLEN];
+	uint8_t sigkey[SIGPUBLICBYTES];
+	uint8_t enckey[ENCPUBLICBYTES];
 	char ident[IDENTLEN];
 };
+const size_t pubkeysize = offsetof(struct reoppubkey, ident);
 
 /* utility */
 static int
@@ -476,29 +467,30 @@ kdf(uint8_t *salt, size_t saltlen, int rounds, kdf_allowstdin allowstdin,
 }
 
 void
-encryptseckey(struct seckey *seckey)
+encryptseckey(struct reopseckey *seckey)
 {
 	uint8_t symkey[SYMKEYBYTES];
 	kdf_allowstdin allowstdin = { 1 };
 	kdf_confirm confirm = { 1 };
 	int rounds = ntohl(seckey->kdfrounds);
 
-	kdf(seckey->salt, sizeof(seckey->salt), rounds, allowstdin, confirm,
-	    symkey, sizeof(symkey));
+	kdf(seckey->salt, sizeof(seckey->salt), rounds,
+	    allowstdin, confirm, symkey, sizeof(symkey));
 	symencryptraw(seckey->sigkey, sizeof(seckey->sigkey) + sizeof(seckey->enckey),
 	    seckey->box, symkey);
 	sodium_memzero(symkey, sizeof(symkey));
 }
 
 void
-decryptseckey(struct seckey *seckey, kdf_allowstdin allowstdin)
+decryptseckey(struct reopseckey *seckey, kdf_allowstdin allowstdin)
 {
-	uint8_t symkey[SYMKEYBYTES];
-	kdf_confirm confirm = { 0 };
-
 	if (memcmp(seckey->kdfalg, KDFALG, 2) != 0)
 		errx(1, "unsupported KDF");
+
+	uint8_t symkey[SYMKEYBYTES];
+	kdf_confirm confirm = { 0 };
 	int rounds = ntohl(seckey->kdfrounds);
+
 	kdf(seckey->salt, sizeof(seckey->salt), rounds,
 	    allowstdin, confirm, symkey, sizeof(symkey));
 	symdecryptraw(seckey->sigkey, sizeof(seckey->sigkey) + sizeof(seckey->enckey),
@@ -509,13 +501,10 @@ decryptseckey(struct seckey *seckey, kdf_allowstdin allowstdin)
 /*
  * read user's pubkeyring file to allow lookup by ident
  */
-static const struct pubkey *
+static const struct reoppubkey *
 findpubkey(const char *ident)
 {
-	static struct {
-		char ident[IDENTLEN];
-		struct pubkey pubkey;
-	} *keys;
+	static struct reoppubkey *keys;
 	static int numkeys;
 	static int done;
 	const char *beginreop = "-----BEGIN REOP PUBLIC KEY-----\n";
@@ -555,8 +544,7 @@ findpubkey(const char *ident)
 					break;
 				strlcat(buf, line, sizeof(buf));
 			}
-			if (b64_pton(buf, (void *)&keys[numkeys].pubkey,
-			    sizeof(keys[0].pubkey)) != sizeof(keys[0].pubkey))
+			if (b64_pton(buf, (void *)&keys[numkeys], pubkeysize) != pubkeysize)
 				errx(1, "invalid keyring b64 encoding");
 			if (numkeys++ > 1000000)
 				errx(1, "too many keys");
@@ -564,7 +552,7 @@ findpubkey(const char *ident)
 	}
 	for (int i = 0; i < numkeys; i++) {
 		if (strcmp(ident, keys[i].ident) == 0)
-			return &keys[i].pubkey;
+			return &keys[i];
 	}
 	return NULL;
 }
@@ -577,31 +565,29 @@ findpubkey(const char *ident)
 const struct reoppubkey *
 reopgetpubkey(const char *pubkeyfile, const char *ident)
 {
-	struct reoppubkey *reoppubkey = xmalloc(sizeof(*reoppubkey));
+	struct reoppubkey *pubkey = xmalloc(sizeof(*pubkey));
 
 	if (!pubkeyfile && ident) {
-		const struct pubkey *identkey;
+		const struct reoppubkey *identkey;
 		if ((identkey = findpubkey(ident))) {
-			reoppubkey->pubkey = *identkey;
-			strlcpy(reoppubkey->ident, ident, sizeof(reoppubkey));
-			return reoppubkey;
+			*pubkey = *identkey;
+			return pubkey;
 		}
 		errx(1, "unable to find a pubkey for %s", ident);
 	}
 	if (!pubkeyfile)
 		pubkeyfile = gethomefile("pubkey");
-	readkeyfile(pubkeyfile, &reoppubkey->pubkey, sizeof(reoppubkey->pubkey),
-	    reoppubkey->ident);
-	return reoppubkey;
+	readkeyfile(pubkeyfile, pubkey, pubkeysize, pubkey->ident);
+	return pubkey;
 }
 
 /*
  * free pubkey
  */
 void
-reopfreepubkey(const struct reoppubkey *reoppubkey)
+reopfreepubkey(const struct reoppubkey *pubkey)
 {
-	xfree((void *)reoppubkey, sizeof(*reoppubkey));
+	xfree((void *)pubkey, sizeof(*pubkey));
 }
 
 /*
@@ -614,21 +600,20 @@ reopgetseckey(const char *seckeyfile, kdf_allowstdin allowstdin)
 	if (!seckeyfile)
 		seckeyfile = gethomefile("seckey");
 
-	struct reopseckey *reopseckey = xmalloc(sizeof(*reopseckey));
-	struct seckey *seckey = &reopseckey->seckey;
+	struct reopseckey *seckey = xmalloc(sizeof(*seckey));
 
-	readkeyfile(seckeyfile, seckey, sizeof(*seckey), reopseckey->ident);
+	readkeyfile(seckeyfile, seckey, seckeysize, seckey->ident);
 	decryptseckey(seckey, allowstdin);
-	return reopseckey;
+	return seckey;
 }
 
 /*
  * free seckey
  */
 void
-reopfreeseckey(const struct reopseckey *reopseckey)
+reopfreeseckey(const struct reopseckey *seckey)
 {
-	xfree((void *)reopseckey, sizeof(*reopseckey));
+	xfree((void *)seckey, sizeof(*seckey));
 }
 
 /*
@@ -673,16 +658,14 @@ reopgenerate(int rounds, const char *ident)
 {
 	uint8_t fingerprint[FPLEN];
 
-	struct reoppubkey *reoppubkey = xmalloc(sizeof(*reoppubkey));
-	memset(reoppubkey, 0, sizeof(*reoppubkey));
-	struct pubkey *pubkey = &reoppubkey->pubkey;
+	struct reoppubkey *pubkey = xmalloc(sizeof(*pubkey));
+	memset(pubkey, 0, sizeof(*pubkey));
 
-	struct reopseckey *reopseckey = xmalloc(sizeof(*reopseckey));
-	memset(reopseckey, 0, sizeof(*reopseckey));
-	struct seckey *seckey = &reopseckey->seckey;
+	struct reopseckey *seckey = xmalloc(sizeof(*seckey));
+	memset(seckey, 0, sizeof(*seckey));
 
-	strlcpy(reoppubkey->ident, ident, sizeof(reoppubkey->ident));
-	strlcpy(reopseckey->ident, ident, sizeof(reopseckey->ident));
+	strlcpy(pubkey->ident, ident, sizeof(pubkey->ident));
+	strlcpy(seckey->ident, ident, sizeof(seckey->ident));
 
 	crypto_sign_ed25519_keypair(pubkey->sigkey, seckey->sigkey);
 	crypto_box_keypair(pubkey->enckey, seckey->enckey);
@@ -700,7 +683,7 @@ reopgenerate(int rounds, const char *ident)
 	memcpy(pubkey->sigalg, SIGALG, 2);
 	memcpy(pubkey->encalg, ENCKEYALG, 2);
 
-	struct reopkeypair keypair = { reoppubkey, reopseckey };
+	struct reopkeypair keypair = { pubkey, seckey };
 	return keypair;
 }
 
@@ -710,20 +693,18 @@ reopgenerate(int rounds, const char *ident)
 const struct reoppubkey *
 reopparsepubkey(const char *pubkeydata)
 {
-	struct reoppubkey *reoppubkey = xmalloc(sizeof(*reoppubkey));
-	parsekeydata(pubkeydata, &reoppubkey->pubkey, sizeof(reoppubkey->pubkey),
-	    reoppubkey->ident);
-	return reoppubkey;
+	struct reoppubkey *pubkey = xmalloc(sizeof(*pubkey));
+	parsekeydata(pubkeydata, pubkey, pubkeysize, pubkey->ident);
+	return pubkey;
 }
 
 /*
  * encode a pubkey to a string
  */
 const char *
-reopencodepubkey(const struct reoppubkey *reoppubkey)
+reopencodepubkey(const struct reoppubkey *pubkey)
 {
-	return encodekey("PUBLIC KEY", &reoppubkey->pubkey, sizeof(reoppubkey->pubkey),
-	    reoppubkey->ident);
+	return encodekey("PUBLIC KEY", pubkey, pubkeysize, pubkey->ident);
 }
 
 /*
@@ -732,26 +713,24 @@ reopencodepubkey(const struct reoppubkey *reoppubkey)
 const struct reopseckey *
 reopparseseckey(const char *seckeydata)
 {
-	struct reopseckey *reopseckey = xmalloc(sizeof(*reopseckey));
-	parsekeydata(seckeydata, &reopseckey->seckey, sizeof(reopseckey->seckey),
-	    reopseckey->ident);
+	struct reopseckey *seckey = xmalloc(sizeof(*seckey));
+	parsekeydata(seckeydata, seckey, seckeysize, seckey->ident);
 
 	kdf_allowstdin allowstdin = { 0 };
-	decryptseckey(&reopseckey->seckey, allowstdin);
-	return reopseckey;
+	decryptseckey(seckey, allowstdin);
+	return seckey;
 }
 
 /*
  * encode a seckey to a string
  */
 const char *
-reopencodeseckey(const struct reopseckey *reopseckey)
+reopencodeseckey(const struct reopseckey *seckey)
 {
-	struct seckey seckey = reopseckey->seckey;
-	encryptseckey(&seckey);
-	const char *rv = encodekey("SECRET KEY", &seckey, sizeof(seckey),
-	    reopseckey->ident);
-	sodium_memzero(&seckey, sizeof(seckey));
+	struct reopseckey copy = *seckey;
+	encryptseckey(&copy);
+	const char *rv = encodekey("SECRET KEY", &copy, seckeysize, seckey->ident);
+	sodium_memzero(&copy, sizeof(copy));
 	return rv;
 }
 
@@ -765,13 +744,15 @@ generate(const char *pubkeyfile, const char *seckeyfile,
 		seckeyfile = gethomefile("seckey");
 
 	struct reopkeypair keypair = reopgenerate(rounds, ident);
-	encryptseckey((struct seckey *)&keypair.seckey->seckey);
+	struct reopseckey copy = *keypair.seckey;
+	encryptseckey(&copy);
 
-	writekeyfile(seckeyfile, "SECRET KEY", &keypair.seckey->seckey,
-	    sizeof(keypair.seckey->seckey), ident, O_EXCL, 0600);
-	writekeyfile(pubkeyfile, "PUBLIC KEY", &keypair.pubkey->pubkey,
-	    sizeof(keypair.pubkey->pubkey), ident, O_EXCL, 0666);
+	writekeyfile(seckeyfile, "SECRET KEY", &copy, seckeysize,
+	    ident, O_EXCL, 0600);
+	writekeyfile(pubkeyfile, "PUBLIC KEY", keypair.pubkey, pubkeysize,
+	    ident, O_EXCL, 0666);
 
+	sodium_memzero(&copy, sizeof(copy));
 	reopfreepubkey(keypair.pubkey);
 	reopfreeseckey(keypair.seckey);
 }
@@ -780,7 +761,7 @@ generate(const char *pubkeyfile, const char *seckeyfile,
  * write a combined message and signature
  */
 static void
-writesignedmsg(const char *filename, const struct sig *sig,
+writesignedmsg(const char *filename, const struct reopsig *sig,
     const char *ident, const uint8_t *msg, uint64_t msglen)
 {
 	char header[1024];
@@ -794,7 +775,7 @@ writesignedmsg(const char *filename, const struct sig *sig,
 	snprintf(header, sizeof(header), "-----BEGIN REOP SIGNATURE-----\n"
 	    "ident:%s\n", ident);
 	writeall(fd, header, strlen(header), filename);
-	if (b64_ntop((void *)sig, sizeof(*sig), b64, sizeof(b64)) == -1)
+	if (b64_ntop((void *)sig, sigsize, b64, sizeof(b64)) == -1)
 		errx(1, "b64 encode failed");
 	writeb64data(fd, filename, b64);
 	sodium_memzero(b64, sizeof(b64));
@@ -807,26 +788,26 @@ writesignedmsg(const char *filename, const struct sig *sig,
  * basic sign function
  */
 const struct reopsig *
-reopsign(const struct reopseckey *reopseckey, const uint8_t *msg, uint64_t msglen)
+reopsign(const struct reopseckey *seckey, const uint8_t *msg, uint64_t msglen)
 {
-	struct reopsig *reopsig = xmalloc(sizeof(*reopsig));
+	struct reopsig *sig = xmalloc(sizeof(*sig));
 
-	signraw(reopseckey->seckey.sigkey, msg, msglen, reopsig->sig.sig);
+	signraw(seckey->sigkey, msg, msglen, sig->sig);
 
-	memcpy(reopsig->sig.fingerprint, reopseckey->seckey.fingerprint, FPLEN);
-	memcpy(reopsig->sig.sigalg, SIGALG, 2);
-	strlcpy(reopsig->ident, reopseckey->ident, sizeof(reopsig->ident));
+	memcpy(sig->fingerprint, seckey->fingerprint, FPLEN);
+	memcpy(sig->sigalg, SIGALG, 2);
+	strlcpy(sig->ident, seckey->ident, sizeof(sig->ident));
 
-	return reopsig;
+	return sig;
 }
 
 /*
  * free sig
  */
 void
-reopfreesig(const struct reopsig *reopsig)
+reopfreesig(const struct reopsig *sig)
 {
-	xfree((void *)reopsig, sizeof(*reopsig));
+	xfree((void *)sig, sizeof(*sig));
 }
 
 /*
@@ -835,18 +816,18 @@ reopfreesig(const struct reopsig *reopsig)
 const struct reopsig *
 reopparsesig(const char *sigdata)
 {
-	struct reopsig *reopsig = xmalloc(sizeof(*reopsig));
-	parsekeydata(sigdata, &reopsig->sig, sizeof(reopsig->sig), reopsig->ident);
-	return reopsig;
+	struct reopsig *sig = xmalloc(sizeof(*sig));
+	parsekeydata(sigdata, sig, sigsize, sig->ident);
+	return sig;
 }
 
 /*
  * encode a signature to a string
  */
 const char *
-reopencodesig(const struct reopsig *reopsig)
+reopencodesig(const struct reopsig *sig)
 {
-	return encodekey("SIGNATURE", &reopsig->sig, sizeof(reopsig->sig), reopsig->ident);
+	return encodekey("SIGNATURE", sig, sigsize, sig->ident);
 }
 
 /*
@@ -857,9 +838,9 @@ readsigfile(const char *sigfile)
 {
 	uint64_t sigdatalen;
 	uint8_t *sigdata = readall(sigfile, &sigdatalen);
-	const struct reopsig *reopsig = reopparsesig(sigdata);
+	const struct reopsig *sig = reopparsesig(sigdata);
 	xfree(sigdata, sigdatalen);
-	return reopsig;
+	return sig;
 }
 
 /*
@@ -873,19 +854,19 @@ signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
 	uint8_t *msg = readall(msgfile, &msglen);
 
 	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
-	const struct reopseckey *reopseckey = reopgetseckey(seckeyfile, allowstdin);
+	const struct reopseckey *seckey = reopgetseckey(seckeyfile, allowstdin);
 
-	const struct reopsig *reopsig = reopsign(reopseckey, msg, msglen);
+	const struct reopsig *sig = reopsign(seckey, msg, msglen);
 
-	reopfreeseckey(reopseckey);
+	reopfreeseckey(seckey);
 
 	if (embedded)
-		writesignedmsg(sigfile, &reopsig->sig, reopsig->ident, msg, msglen);
+		writesignedmsg(sigfile, sig, sig->ident, msg, msglen);
 	else
-		writekeyfile(sigfile, "SIGNATURE", &reopsig->sig, sizeof(reopsig->sig),
-		    reopsig->ident, O_TRUNC, 0666);
+		writekeyfile(sigfile, "SIGNATURE", sig, sigsize,
+		    sig->ident, O_TRUNC, 0666);
 
-	reopfreesig(reopsig);
+	reopfreesig(sig);
 	xfree(msg, msglen);
 }
 
@@ -893,12 +874,12 @@ signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
  * basic verify function
  */
 void
-reopverify(const struct reoppubkey *reoppubkey, const uint8_t *msg, uint64_t msglen,
-    const struct reopsig *reopsig)
+reopverify(const struct reoppubkey *pubkey, const uint8_t *msg, uint64_t msglen,
+    const struct reopsig *sig)
 {
-	if (memcmp(reoppubkey->pubkey.fingerprint, reopsig->sig.fingerprint, FPLEN) != 0)
+	if (memcmp(pubkey->fingerprint, sig->fingerprint, FPLEN) != 0)
 		errx(1, "verification failed: checked against wrong key");
-	verifyraw(reoppubkey->pubkey.sigkey, msg, msglen, reopsig->sig.sig);
+	verifyraw(pubkey->sigkey, msg, msglen, sig->sig);
 }
 
 /*
@@ -912,15 +893,15 @@ verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
 	uint8_t *msg = readall(msgfile, &msglen);
 
 	char ident[IDENTLEN];
-	const struct reopsig *reopsig = readsigfile(sigfile);
-	const struct reoppubkey *reoppubkey = reopgetpubkey(pubkeyfile, ident);
+	const struct reopsig *sig = readsigfile(sigfile);
+	const struct reoppubkey *pubkey = reopgetpubkey(pubkeyfile, ident);
 
-	reopverify(reoppubkey, msg, msglen, reopsig);
+	reopverify(pubkey, msg, msglen, sig);
 	if (!quiet)
 		printf("Signature Verified\n");
 
-	reopfreesig(reopsig);
-	reopfreepubkey(reoppubkey);
+	reopfreesig(sig);
+	reopfreepubkey(pubkey);
 	xfree(msg, msglen);
 }
 
@@ -946,15 +927,15 @@ verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet)
 		sigdata = nextsig;
 	uint64_t msglen = sigdata - msg;
 
-	const struct reopsig *reopsig = reopparsesig(sigdata);
-	const struct reoppubkey *reoppubkey = reopgetpubkey(pubkeyfile, reopsig->ident);
+	const struct reopsig *sig = reopparsesig(sigdata);
+	const struct reoppubkey *pubkey = reopgetpubkey(pubkeyfile, sig->ident);
 
-	reopverify(reoppubkey, msg, msglen, reopsig);
+	reopverify(pubkey, msg, msglen, sig);
 	if (!quiet)
 		printf("Signature Verified\n");
 
-	reopfreesig(reopsig);
-	reopfreepubkey(reoppubkey);
+	reopfreesig(sig);
+	reopfreepubkey(pubkey);
 	xfree(msgdata, msgdatalen);
 
 	return;
@@ -1027,11 +1008,9 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	uint64_t msglen;
 	uint8_t *msg = readall(msgfile, &msglen);
 
-	const struct reoppubkey *reoppubkey = reopgetpubkey(pubkeyfile, ident);
-	const struct pubkey *pubkey = &reoppubkey->pubkey;
+	const struct reoppubkey *pubkey = reopgetpubkey(pubkeyfile, ident);
 	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
-	const struct reopseckey *reopseckey = reopgetseckey(seckeyfile, allowstdin);
-	const struct seckey *seckey = &reopseckey->seckey;
+	const struct reopseckey *seckey = reopgetseckey(seckeyfile, allowstdin);
 
 	if (memcmp(pubkey->encalg, ENCKEYALG, 2) != 0)
 		errx(1, "unsupported key format");
@@ -1045,10 +1024,10 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	pubencryptraw(msg, msglen, encmsg.box, pubkey->enckey, ephseckey);
 	pubencryptraw(encmsg.ephpubkey, sizeof(encmsg.ephpubkey), encmsg.ephbox, pubkey->enckey, seckey->enckey);
 
-	writeencfile(encfile, &encmsg, sizeof(encmsg), reopseckey->ident, msg, msglen, binary);
+	writeencfile(encfile, &encmsg, sizeof(encmsg), seckey->ident, msg, msglen, binary);
 
-	reopfreeseckey(reopseckey);
-	reopfreepubkey(reoppubkey);
+	reopfreeseckey(seckey);
+	reopfreepubkey(pubkey);
 	sodium_memzero(&ephseckey, sizeof(ephseckey));
 
 	xfree(msg, msglen);
@@ -1064,11 +1043,9 @@ v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 {
 	struct oldencmsg oldencmsg;
 
-	const struct reoppubkey *reoppubkey = reopgetpubkey(pubkeyfile, ident);
-	const struct pubkey *pubkey = &reoppubkey->pubkey;
+	const struct reoppubkey *pubkey = reopgetpubkey(pubkeyfile, ident);
 	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
-	const struct reopseckey *reopseckey = reopgetseckey(seckeyfile, allowstdin);
-	const struct seckey *seckey = &reopseckey->seckey;
+	const struct reopseckey *seckey = reopgetseckey(seckeyfile, allowstdin);
 
 	uint64_t msglen;
 	uint8_t *msg = readall(msgfile, &msglen);
@@ -1082,10 +1059,10 @@ v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	memcpy(oldencmsg.secfingerprint, seckey->fingerprint, FPLEN);
 	pubencryptraw(msg, msglen, oldencmsg.box, pubkey->enckey, seckey->enckey);
 
-	writeencfile(encfile, &oldencmsg, sizeof(oldencmsg), reopseckey->ident, msg, msglen, binary);
+	writeencfile(encfile, &oldencmsg, sizeof(oldencmsg), seckey->ident, msg, msglen, binary);
 
-	reopfreeseckey(reopseckey);
-	reopfreepubkey(reoppubkey);
+	reopfreeseckey(seckey);
+	reopfreepubkey(pubkey);
 
 	xfree(msg, msglen);
 }
@@ -1231,10 +1208,8 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 	} else if (memcmp(hdr.alg, ENCALG, 2) == 0) {
 		if (hdrsize != sizeof(hdr.encmsg))
 			goto fail;
-		const struct reoppubkey *reoppubkey = reopgetpubkey(pubkeyfile, ident);
-		const struct pubkey *pubkey = &reoppubkey->pubkey;
-		const struct reopseckey *reopseckey = reopgetseckey(seckeyfile, allowstdin);
-		const struct seckey *seckey = &reopseckey->seckey;
+		const struct reoppubkey *pubkey = reopgetpubkey(pubkeyfile, ident);
+		const struct reopseckey *seckey = reopgetseckey(seckeyfile, allowstdin);
 		if (memcmp(hdr.encmsg.pubfingerprint, seckey->fingerprint, FPLEN) != 0 ||
 		    memcmp(hdr.encmsg.secfingerprint, pubkey->fingerprint, FPLEN) != 0)
 			goto fpfail;
@@ -1245,15 +1220,13 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 			errx(1, "unsupported key format");
 		pubdecryptraw(hdr.encmsg.ephpubkey, sizeof(hdr.encmsg.ephpubkey), hdr.encmsg.ephbox, pubkey->enckey, seckey->enckey);
 		pubdecryptraw(msg, msglen, hdr.encmsg.box, hdr.encmsg.ephpubkey, seckey->enckey);
-		reopfreeseckey(reopseckey);
-		reopfreepubkey(reoppubkey);
+		reopfreeseckey(seckey);
+		reopfreepubkey(pubkey);
 	} else if (memcmp(hdr.alg, OLDENCALG, 2) == 0) {
 		if (hdrsize != sizeof(hdr.oldencmsg))
 			goto fail;
-		const struct reoppubkey *reoppubkey = reopgetpubkey(pubkeyfile, ident);
-		const struct pubkey *pubkey = &reoppubkey->pubkey;
-		const struct reopseckey *reopseckey = reopgetseckey(seckeyfile, allowstdin);
-		const struct seckey *seckey = &reopseckey->seckey;
+		const struct reoppubkey *pubkey = reopgetpubkey(pubkeyfile, ident);
+		const struct reopseckey *seckey = reopgetseckey(seckeyfile, allowstdin);
 		/* pub/sec pairs work both ways */
 		if (memcmp(hdr.oldencmsg.pubfingerprint, pubkey->fingerprint, FPLEN) == 0) {
 			if (memcmp(hdr.oldencmsg.secfingerprint, seckey->fingerprint, FPLEN) != 0)
@@ -1267,18 +1240,17 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		if (memcmp(seckey->encalg, ENCKEYALG, 2) != 0)
 			errx(1, "unsupported key format");
 		pubdecryptraw(msg, msglen, hdr.oldencmsg.box, pubkey->enckey, seckey->enckey);
-		reopfreeseckey(reopseckey);
-		reopfreepubkey(reoppubkey);
+		reopfreeseckey(seckey);
+		reopfreepubkey(pubkey);
 	} else if (memcmp(hdr.alg, OLDEKCALG, 2) == 0) {
 		if (hdrsize != sizeof(hdr.oldekcmsg))
 			goto fail;
-		const struct reopseckey *reopseckey = reopgetseckey(seckeyfile, allowstdin);
-		const struct seckey *seckey = &reopseckey->seckey;
+		const struct reopseckey *seckey = reopgetseckey(seckeyfile, allowstdin);
 		if (memcmp(hdr.oldekcmsg.pubfingerprint, seckey->fingerprint, FPLEN) != 0)
 			goto fpfail;
 
 		pubdecryptraw(msg, msglen, hdr.oldekcmsg.box, hdr.oldekcmsg.pubkey, seckey->enckey);
-		reopfreeseckey(reopseckey);
+		reopfreeseckey(seckey);
 	} else {
 		goto fail;
 	}
