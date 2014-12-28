@@ -6,14 +6,14 @@ fd:close()
 
 ffi.cdef(header)
 
-local reop = ffi.load("../libreop.so")
+local lib = ffi.load("../libreop.so")
 
-local keypair = reop.reopgenerate(0, "luatest")
+local keypair = lib.reop_generate(0, "luatest")
 local msg = "Attack at midnight!"
 
-local sig = reop.reopsign(keypair.seckey, msg, msg:len())
-local sigdata = reop.reopencodesig(sig)
-local sig2 = reop.reopparsesig(sigdata)
+local sig = lib.reop_sign(keypair.seckey, msg, msg:len())
+local sigdata = lib.reop_encodesig(sig)
+local sig2 = lib.reop_parsesig(sigdata)
 
-reop.reopverify(keypair.pubkey, msg, msg:len(), sig2)
+lib.reop_verify(keypair.pubkey, msg, msg:len(), sig2)
 print("Lua passed.")

@@ -14,13 +14,13 @@
  * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
  */
 
-struct reopseckey;
-struct reoppubkey;
-struct reopsig;
+struct reop_seckey;
+struct reop_pubkey;
+struct reop_sig;
 
-struct reopkeypair {
-	const struct reoppubkey *pubkey;
-	const struct reopseckey *seckey;
+struct reop_keypair {
+	const struct reop_pubkey *pubkey;
+	const struct reop_seckey *seckey;
 };
 
 typedef struct { int v; } kdf_allowstdin;
@@ -28,32 +28,32 @@ typedef struct { int v; } kdf_confirm;
 typedef struct { int v; } opt_binary;
 
 /* generate a keypair */
-struct reopkeypair reopgenerate(int rounds, const char *ident);
+struct reop_keypair reop_generate(int rounds, const char *ident);
 
 /* pubkey functions */
-const struct reoppubkey *reopgetpubkey(const char *pubkeyfile, const char *ident);
-const struct reoppubkey *reopparsepubkey(const char *pubkeydata);
-const char *reopencodepubkey(const struct reoppubkey *pubkey);
-void reopfreepubkey(const struct reoppubkey *reoppubkey);
+const struct reop_pubkey *reop_getpubkey(const char *pubkeyfile, const char *ident);
+const struct reop_pubkey *reop_parsepubkey(const char *pubkeydata);
+const char *reop_encodepubkey(const struct reop_pubkey *pubkey);
+void reop_freepubkey(const struct reop_pubkey *reop_pubkey);
 
 /* seckey functions */
-const struct reopseckey *reopgetseckey(const char *seckeyfile, kdf_allowstdin allowstdin);
-const struct reopseckey *reopparseseckey(const char *seckeydata);
-const char *reopencodeseckey(const struct reopseckey *seckey);
-void reopfreeseckey(const struct reopseckey *reopseckey);
+const struct reop_seckey *reop_getseckey(const char *seckeyfile, kdf_allowstdin allowstdin);
+const struct reop_seckey *reop_parseseckey(const char *seckeydata);
+const char *reop_encodeseckey(const struct reop_seckey *seckey);
+void reop_freeseckey(const struct reop_seckey *reop_seckey);
 
 /* sign and verify */
-const struct reopsig *reopsign(const struct reopseckey *seckey, const uint8_t *msg,
+const struct reop_sig *reop_sign(const struct reop_seckey *seckey, const uint8_t *msg,
     uint64_t msglen);
-void reopverify(const struct reoppubkey *reoppubkey, const uint8_t *msg, uint64_t msglen,
-    const struct reopsig *reopsig);
+void reop_verify(const struct reop_pubkey *reop_pubkey, const uint8_t *msg, uint64_t msglen,
+    const struct reop_sig *reop_sig);
 
 /* sig functions */
-const struct reopsig *reopparsesig(const char *sigdata);
-const char *reopencodesig(const struct reopsig *sig);
-void reopfreesig(const struct reopsig *sig);
+const struct reop_sig *reop_parsesig(const char *sigdata);
+const char *reop_encodesig(const struct reop_sig *sig);
+void reop_freesig(const struct reop_sig *sig);
 
-void reopfreestr(const char *str);
+void reop_freestr(const char *str);
 
 /* application code; yet to be converted */
 struct pubkey;
