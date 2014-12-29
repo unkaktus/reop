@@ -65,7 +65,7 @@
 #define SYMALG "SP"	/* Salsa20-Poly1305 */
 #define KDFALG "BK"	/* bcrypt kdf */
 #define IDENTLEN 64
-#define FPLEN 8
+#define RANDOMIDLEN 8
 #define REOP_BINARY "RBF"
 
 /* metadata */
@@ -79,8 +79,8 @@ struct symmsg {
 
 struct encmsg {
 	uint8_t encalg[2];
-	uint8_t secfingerprint[FPLEN];
-	uint8_t pubfingerprint[FPLEN];
+	uint8_t secrandomid[RANDOMIDLEN];
+	uint8_t pubrandomid[RANDOMIDLEN];
 	uint8_t ephpubkey[ENCPUBLICBYTES];
 	uint8_t ephbox[ENCNONCEBYTES + ENCBOXBYTES];
 	uint8_t box[ENCNONCEBYTES + ENCBOXBYTES];
@@ -88,14 +88,14 @@ struct encmsg {
 
 struct oldencmsg {
 	uint8_t encalg[2];
-	uint8_t secfingerprint[FPLEN];
-	uint8_t pubfingerprint[FPLEN];
+	uint8_t secrandomid[RANDOMIDLEN];
+	uint8_t pubrandomid[RANDOMIDLEN];
 	uint8_t box[ENCNONCEBYTES + ENCBOXBYTES];
 };
 
 struct oldekcmsg {
 	uint8_t ekcalg[2];
-	uint8_t pubfingerprint[FPLEN];
+	uint8_t pubrandomid[RANDOMIDLEN];
 	uint8_t pubkey[ENCPUBLICBYTES];
 	uint8_t box[ENCNONCEBYTES + ENCBOXBYTES];
 };
@@ -105,7 +105,7 @@ struct reop_seckey {
 	uint8_t encalg[2];
 	uint8_t symalg[2];
 	uint8_t kdfalg[2];
-	uint8_t fingerprint[FPLEN];
+	uint8_t randomid[RANDOMIDLEN];
 	uint32_t kdfrounds;
 	uint8_t salt[16];
 	uint8_t box[SYMNONCEBYTES + SYMBOXBYTES];
@@ -117,7 +117,7 @@ const size_t seckeysize = offsetof(struct reop_seckey, ident);
 
 struct reop_sig {
 	uint8_t sigalg[2];
-	uint8_t fingerprint[FPLEN];
+	uint8_t randomid[RANDOMIDLEN];
 	uint8_t sig[SIGBYTES];
 	char ident[IDENTLEN];
 };
@@ -126,7 +126,7 @@ const size_t sigsize = offsetof(struct reop_sig, ident);
 struct reop_pubkey {
 	uint8_t sigalg[2];
 	uint8_t encalg[2];
-	uint8_t fingerprint[FPLEN];
+	uint8_t randomid[RANDOMIDLEN];
 	uint8_t sigkey[SIGPUBLICBYTES];
 	uint8_t enckey[ENCPUBLICBYTES];
 	char ident[IDENTLEN];
@@ -673,7 +673,7 @@ writekeyfile(const char *filename, const char *info, const void *key,
 struct reop_keypair
 reop_generate(int rounds, const char *ident)
 {
-	uint8_t fingerprint[FPLEN];
+	uint8_t randomid[RANDOMIDLEN];
 
 	struct reop_pubkey *pubkey = xmalloc(sizeof(*pubkey));
 	memset(pubkey, 0, sizeof(*pubkey));
@@ -686,9 +686,9 @@ reop_generate(int rounds, const char *ident)
 
 	crypto_sign_ed25519_keypair(pubkey->sigkey, seckey->sigkey);
 	crypto_box_keypair(pubkey->enckey, seckey->enckey);
-	randombytes(fingerprint, sizeof(fingerprint));
+	randombytes(randomid, sizeof(randomid));
 
-	memcpy(seckey->fingerprint, fingerprint, FPLEN);
+	memcpy(seckey->randomid, randomid, RANDOMIDLEN);
 	memcpy(seckey->sigalg, SIGALG, 2);
 	memcpy(seckey->encalg, ENCKEYALG, 2);
 	memcpy(seckey->symalg, SYMALG, 2);
@@ -696,7 +696,7 @@ reop_generate(int rounds, const char *ident)
 	seckey->kdfrounds = htonl(rounds);
 	randombytes(seckey->salt, sizeof(seckey->salt));
 
-	memcpy(pubkey->fingerprint, fingerprint, FPLEN);
+	memcpy(pubkey->randomid, randomid, RANDOMIDLEN);
 	memcpy(pubkey->sigalg, SIGALG, 2);
 	memcpy(pubkey->encalg, ENCKEYALG, 2);
 
@@ -811,7 +811,7 @@ reop_sign(const struct reop_seckey *seckey, const uint8_t *msg, uint64_t msglen)
 
 	signraw(seckey->sigkey, msg, msglen, sig->sig);
 
-	memcpy(sig->fingerprint, seckey->fingerprint, FPLEN);
+	memcpy(sig->randomid, seckey->randomid, RANDOMIDLEN);
 	memcpy(sig->sigalg, SIGALG, 2);
 	strlcpy(sig->ident, seckey->ident, sizeof(sig->ident));
 
@@ -894,7 +894,7 @@ void
 reop_verify(const struct reop_pubkey *pubkey, const uint8_t *msg, uint64_t msglen,
     const struct reop_sig *sig)
 {
-	if (memcmp(pubkey->fingerprint, sig->fingerprint, FPLEN) != 0)
+	if (memcmp(pubkey->randomid, sig->randomid, RANDOMIDLEN) != 0)
 		errx(1, "verification failed: checked against wrong key");
 	verifyraw(pubkey->sigkey, msg, msglen, sig->sig);
 }
@@ -1034,8 +1034,8 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	if (memcmp(seckey->encalg, ENCKEYALG, 2) != 0)
 		errx(1, "unsupported key format");
 	memcpy(encmsg.encalg, ENCALG, 2);
-	memcpy(encmsg.pubfingerprint, pubkey->fingerprint, FPLEN);
-	memcpy(encmsg.secfingerprint, seckey->fingerprint, FPLEN);
+	memcpy(encmsg.pubrandomid, pubkey->randomid, RANDOMIDLEN);
+	memcpy(encmsg.secrandomid, seckey->randomid, RANDOMIDLEN);
 	crypto_box_keypair(encmsg.ephpubkey, ephseckey);
 
 	pubencryptraw(msg, msglen, encmsg.box, pubkey->enckey, ephseckey);
@@ -1072,8 +1072,8 @@ v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	if (memcmp(seckey->encalg, ENCKEYALG, 2) != 0)
 		errx(1, "unsupported key format");
 	memcpy(oldencmsg.encalg, OLDENCALG, 2);
-	memcpy(oldencmsg.pubfingerprint, pubkey->fingerprint, FPLEN);
-	memcpy(oldencmsg.secfingerprint, seckey->fingerprint, FPLEN);
+	memcpy(oldencmsg.pubrandomid, pubkey->randomid, RANDOMIDLEN);
+	memcpy(oldencmsg.secrandomid, seckey->randomid, RANDOMIDLEN);
 	pubencryptraw(msg, msglen, oldencmsg.box, pubkey->enckey, seckey->enckey);
 
 	writeencfile(encfile, &oldencmsg, sizeof(oldencmsg), seckey->ident, msg, msglen, binary);
@@ -1227,8 +1227,8 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 			goto fail;
 		const struct reop_pubkey *pubkey = reop_getpubkey(pubkeyfile, ident);
 		const struct reop_seckey *seckey = reop_getseckey(seckeyfile, allowstdin);
-		if (memcmp(hdr.encmsg.pubfingerprint, seckey->fingerprint, FPLEN) != 0 ||
-		    memcmp(hdr.encmsg.secfingerprint, pubkey->fingerprint, FPLEN) != 0)
+		if (memcmp(hdr.encmsg.pubrandomid, seckey->randomid, RANDOMIDLEN) != 0 ||
+		    memcmp(hdr.encmsg.secrandomid, pubkey->randomid, RANDOMIDLEN) != 0)
 			goto fpfail;
 
 		if (memcmp(pubkey->encalg, ENCKEYALG, 2) != 0)
@@ -1245,11 +1245,11 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		const struct reop_pubkey *pubkey = reop_getpubkey(pubkeyfile, ident);
 		const struct reop_seckey *seckey = reop_getseckey(seckeyfile, allowstdin);
 		/* pub/sec pairs work both ways */
-		if (memcmp(hdr.oldencmsg.pubfingerprint, pubkey->fingerprint, FPLEN) == 0) {
-			if (memcmp(hdr.oldencmsg.secfingerprint, seckey->fingerprint, FPLEN) != 0)
+		if (memcmp(hdr.oldencmsg.pubrandomid, pubkey->randomid, RANDOMIDLEN) == 0) {
+			if (memcmp(hdr.oldencmsg.secrandomid, seckey->randomid, RANDOMIDLEN) != 0)
 				goto fpfail;
-		} else if (memcmp(hdr.oldencmsg.pubfingerprint, seckey->fingerprint, FPLEN) != 0 ||
-		    memcmp(hdr.oldencmsg.pubfingerprint, seckey->fingerprint, FPLEN) != 0)
+		} else if (memcmp(hdr.oldencmsg.pubrandomid, seckey->randomid, RANDOMIDLEN) != 0 ||
+		    memcmp(hdr.oldencmsg.pubrandomid, seckey->randomid, RANDOMIDLEN) != 0)
 			goto fpfail;
 
 		if (memcmp(pubkey->encalg, ENCKEYALG, 2) != 0)
@@ -1263,7 +1263,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		if (hdrsize != sizeof(hdr.oldekcmsg))
 			goto fail;
 		const struct reop_seckey *seckey = reop_getseckey(seckeyfile, allowstdin);
-		if (memcmp(hdr.oldekcmsg.pubfingerprint, seckey->fingerprint, FPLEN) != 0)
+		if (memcmp(hdr.oldekcmsg.pubrandomid, seckey->randomid, RANDOMIDLEN) != 0)
 			goto fpfail;
 
 		pubdecryptraw(msg, msglen, hdr.oldekcmsg.box, hdr.oldekcmsg.pubkey, seckey->enckey);
@@ -1283,5 +1283,5 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 fail:
 	errx(1, "invalid encrypted message: %s", encfile);
 fpfail:
-	errx(1, "fingerprint mismatch");
+	errx(1, "key mismatch");
 }
