@@ -321,6 +321,10 @@ writeall(int fd, const void *buf, size_t buflen, const char *filename)
 	}
 }
 
+/*
+ * can really write any kind of data, but we're usually interested in line
+ * wrapping for base64 encoded blocks
+ */
 static void
 writeb64data(int fd, const char *filename, char *b64)
 {
@@ -335,6 +339,10 @@ writeb64data(int fd, const char *filename, char *b64)
 	}
 }
 
+/*
+ * wrap lines in place.
+ * start at the end and pull the string down we go.
+ */
 static void
 wraplines(char *str, size_t space)
 {
@@ -351,6 +359,10 @@ wraplines(char *str, size_t space)
 	}
 }
 
+/*
+ * create a filename based on user's home directory.
+ * requires that ~/.reop exist.
+ */
 static char *
 gethomefile(const char *filename)
 {
@@ -466,6 +478,11 @@ kdf(uint8_t *salt, size_t saltlen, int rounds, kdf_allowstdin allowstdin,
 	sodium_memzero(pass, sizeof(pass));
 }
 
+/*
+ * secret keys are themselves encrypted before export to string format.
+ * they must be decrypted before use. even zero round keys (passwordless)
+ * are still encrypted with a null key.
+ */
 void
 encryptseckey(struct reop_seckey *seckey)
 {
