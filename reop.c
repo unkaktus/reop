@@ -181,8 +181,7 @@ xfree(void *p, size_t len)
 void
 reop_freestr(const char *str)
 {
-	void *v = (void *)str;	/* XXX stupid compilers */
-	xfree(v, strlen(str));
+	xfree((void *)str, strlen(str));
 }
 
 /*
@@ -605,8 +604,7 @@ reop_getpubkey(const char *pubkeyfile, const char *ident)
 void
 reop_freepubkey(const struct reop_pubkey *pubkey)
 {
-	void *v = (void *)pubkey;	/* XXX stupid compilers */
-	xfree(v, sizeof(*pubkey));
+	xfree((void *)pubkey, sizeof(*pubkey));
 }
 
 /*
@@ -632,8 +630,7 @@ reop_getseckey(const char *seckeyfile, kdf_allowstdin allowstdin)
 void
 reop_freeseckey(const struct reop_seckey *seckey)
 {
-	void *v = (void *)seckey;	/* XXX stupid compilers */
-	xfree(v, sizeof(*seckey));
+	xfree((void *)seckey, sizeof(*seckey));
 }
 
 /*
@@ -827,8 +824,7 @@ reop_sign(const struct reop_seckey *seckey, const uint8_t *msg, uint64_t msglen)
 void
 reop_freesig(const struct reop_sig *sig)
 {
-	void *v = (void *)sig;	/* XXX stupid compilers */
-	xfree(v, sizeof(*sig));
+	xfree((void *)sig, sizeof(*sig));
 }
 
 /*
