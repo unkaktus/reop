@@ -181,7 +181,8 @@ xfree(void *p, size_t len)
 void
 reop_freestr(const char *str)
 {
-	xfree((void *)str, strlen(str));
+	void *v = (void *)str;	/* XXX stupid compilers */
+	xfree(v, strlen(str));
 }
 
 /*
@@ -269,7 +270,7 @@ verifyraw(const uint8_t *pubkey, const uint8_t *buf, uint64_t buflen,
 }
 
 /* file utilities */
-static uint8_t *
+static void *
 readall(const char *filename, uint64_t *msglenp)
 {
 	struct stat sb;
@@ -604,7 +605,8 @@ reop_getpubkey(const char *pubkeyfile, const char *ident)
 void
 reop_freepubkey(const struct reop_pubkey *pubkey)
 {
-	xfree((void *)pubkey, sizeof(*pubkey));
+	void *v = (void *)pubkey;	/* XXX stupid compilers */
+	xfree(v, sizeof(*pubkey));
 }
 
 /*
@@ -630,7 +632,8 @@ reop_getseckey(const char *seckeyfile, kdf_allowstdin allowstdin)
 void
 reop_freeseckey(const struct reop_seckey *seckey)
 {
-	xfree((void *)seckey, sizeof(*seckey));
+	void *v = (void *)seckey;	/* XXX stupid compilers */
+	xfree(v, sizeof(*seckey));
 }
 
 /*
@@ -824,7 +827,8 @@ reop_sign(const struct reop_seckey *seckey, const uint8_t *msg, uint64_t msglen)
 void
 reop_freesig(const struct reop_sig *sig)
 {
-	xfree((void *)sig, sizeof(*sig));
+	void *v = (void *)sig;	/* XXX stupid compilers */
+	xfree(v, sizeof(*sig));
 }
 
 /*
@@ -854,7 +858,7 @@ static const struct reop_sig *
 readsigfile(const char *sigfile)
 {
 	uint64_t sigdatalen;
-	uint8_t *sigdata = readall(sigfile, &sigdatalen);
+	char *sigdata = readall(sigfile, &sigdatalen);
 	const struct reop_sig *sig = reop_parsesig(sigdata);
 	xfree(sigdata, sigdatalen);
 	return sig;
@@ -932,12 +936,12 @@ verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet)
 	const char *beginsig = "-----BEGIN REOP SIGNATURE-----\n";
 
 	uint64_t msgdatalen;
-	uint8_t *msgdata = readall(sigfile, &msgdatalen);
+	char *msgdata = readall(sigfile, &msgdatalen);
 
 	if (strncmp(msgdata, beginmsg, strlen(beginmsg)) != 0)
  		goto fail;
-	uint8_t *msg = msgdata + 36;
-	uint8_t *sigdata, *nextsig;
+	char *msg = msgdata + 36;
+	char *sigdata, *nextsig;
 	if (!(sigdata = strstr(msg, beginsig)))
  		goto fail;
 	while ((nextsig = strstr(sigdata + 1, beginsig)))
@@ -947,7 +951,7 @@ verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet)
 	const struct reop_sig *sig = reop_parsesig(sigdata);
 	const struct reop_pubkey *pubkey = reop_getpubkey(pubkeyfile, sig->ident);
 
-	reop_verify(pubkey, msg, msglen, sig);
+	reop_verify(pubkey, (uint8_t*)msg, msglen, sig);
 	if (!quiet)
 		printf("Signature Verified\n");
 
@@ -1134,10 +1138,10 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 	int hdrsize;
 
 	uint64_t encdatalen;
-	uint8_t *encdata = readall(encfile, &encdatalen);
+	char *encdata = readall(encfile, &encdatalen);
 	if (encdatalen > 6 && memcmp(encdata, REOP_BINARY, 4) == 0) {
-		uint8_t *ptr = encdata + 4;
-		uint8_t *endptr = encdata + encdatalen;
+		uint8_t *ptr = (uint8_t *)encdata + 4;
+		uint8_t *endptr = (uint8_t *)encdata + encdatalen;
 		uint32_t identlen;
 
 		if (memcmp(ptr, SYMALG, 2) == 0) {
