@@ -179,6 +179,21 @@ reop_freestr(const char *str)
 }
 
 /*
+ * simple byte swapping function
+ */
+static uint32_t
+h2n(uint32_t x)
+{
+	union {
+		uint32_t w;
+		unsigned char b[4];
+	} u;
+	u.w = x;
+	return u.b[0] << 24 | u.b[1] << 16 | u.b[2] << 8 | u.b[3];
+}
+#define n2h h2n
+
+/*
  * nacl wrapper functions.
  * the nacl API isn't very friendly, requiring the caller to provide padding
  * strange places. these functions workaround that by copying data, which is
@@ -483,7 +498,7 @@ encryptseckey(struct reop_seckey *seckey)
 	uint8_t symkey[SYMKEYBYTES];
 	kdf_allowstdin allowstdin = { 1 };
 	kdf_confirm confirm = { 1 };
-	int rounds = ntohl(seckey->kdfrounds);
+	int rounds = n2h(seckey->kdfrounds);
 
 	kdf(seckey->salt, sizeof(seckey->salt), rounds,
 	    allowstdin, confirm, symkey, sizeof(symkey));
@@ -500,7 +515,7 @@ decryptseckey(struct reop_seckey *seckey, kdf_allowstdin allowstdin)
 
 	uint8_t symkey[SYMKEYBYTES];
 	kdf_confirm confirm = { 0 };
-	int rounds = ntohl(seckey->kdfrounds);
+	int rounds = n2h(seckey->kdfrounds);
 
 	kdf(seckey->salt, sizeof(seckey->salt), rounds,
 	    allowstdin, confirm, symkey, sizeof(symkey));
@@ -687,7 +702,7 @@ reop_generate(int rounds, const char *ident)
 	memcpy(seckey->encalg, ENCKEYALG, 2);
 	memcpy(seckey->symalg, SYMALG, 2);
 	memcpy(seckey->kdfalg, KDFALG, 2);
-	seckey->kdfrounds = htonl(rounds);
+	seckey->kdfrounds = h2n(rounds);
 	randombytes(seckey->salt, sizeof(seckey->salt));
 
 	memcpy(pubkey->randomid, randomid, RANDOMIDLEN);
@@ -964,7 +979,7 @@ writeencfile(const char *filename, const void *hdr,
 {
 	if (binary.v) {
 		uint32_t identlen = strlen(ident);
-		identlen = htonl(identlen);
+		identlen = h2n(identlen);
 
 		int fd = xopen(filename, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
 
@@ -1094,7 +1109,7 @@ symencrypt(const char *msgfile, const char *encfile, int rounds, opt_binary bina
 
 	memcpy(symmsg.kdfalg, KDFALG, 2);
 	memcpy(symmsg.symalg, SYMALG, 2);
-	symmsg.kdfrounds = htonl(rounds);
+	symmsg.kdfrounds = h2n(rounds);
 	randombytes(symmsg.salt, sizeof(symmsg.salt));
 	kdf(symmsg.salt, sizeof(symmsg.salt), rounds,
 	    allowstdin, confirm, symkey, sizeof(symkey));
@@ -1165,7 +1180,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 			goto fail;
 		memcpy(&identlen, ptr, sizeof(identlen));
 		ptr += sizeof(identlen);
-		identlen = ntohl(identlen);
+		identlen = n2h(identlen);
 		if (identlen > sizeof(ident))
 			goto fail;
 		if (ptr + identlen > endptr)
@@ -1211,7 +1226,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
  			goto fail;
 		if (memcmp(hdr.symmsg.kdfalg, KDFALG, 2) != 0)
 			errx(1, "unsupported KDF");
-		int rounds = ntohl(hdr.symmsg.kdfrounds);
+		int rounds = n2h(hdr.symmsg.kdfrounds);
 		kdf(hdr.symmsg.salt, sizeof(hdr.symmsg.salt), rounds,
 		    allowstdin, confirm, symkey, sizeof(symkey));
 		symdecryptraw(msg, msglen, hdr.symmsg.box, symkey);
