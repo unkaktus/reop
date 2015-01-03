@@ -1,11 +1,11 @@
 #!/bin/sh
 
-function has {
+has() {
 	header=/usr/include/$1
 	[ -f $header ] && grep -q $2 $header
 }
 
-function doconfigure {
+doconfigure() {
 	printf 'CPPFLAGS=-I/usr/include -I/usr/local/include -Iother\n'
 	printf 'CFLAGS=-std=c99 -Wall -O2\n'
 	printf 'LDFLAGS=-L/usr/local/lib -lsodium\n'
@@ -14,13 +14,16 @@ function doconfigure {
 	printf 'OBJS+=main.o\n'
 	# always include base64.c. testing for correct versions is too hard
 	printf 'OBJS+=other/base64.o\n'
+	if has features.h _GNU_SOURCE ; then
+		printf 'CPPFLAGS+=-D_GNU_SOURCE\n'
+	fi
 	if ! has string.h strlcpy ; then
 		printf 'OBJS+=other/strlcpy.o\n'
-		printf 'CPPFLAGS+=NEED_STRLCPY\n'
+		printf 'CPPFLAGS+=-DNEED_STRLCPY\n'
 	fi
 	if ! has string.h strlcat ; then
 		printf 'OBJS+=other/strlcat.o\n'
-		printf 'CPPFLAGS+=NEED_STRLCAT\n'
+		printf 'CPPFLAGS+=-DNEED_STRLCAT\n'
 	fi
 	if ! has readpassphrase.h readpassphrase ; then
 		printf 'OBJS+=other/readpassphrase.o\n'

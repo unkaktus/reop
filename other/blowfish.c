@@ -50,6 +50,8 @@
 
 #include <sys/types.h>
 
+#include <blf.h>
+
 #undef inline
 #ifdef __GNUC__
 #define inline __inline
