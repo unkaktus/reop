@@ -1,4 +1,4 @@
-.\"
+ .\"
 .\"Copyright (c) 2014 Ted Unangst <tedu@tedunangst.com>
 .\"
 .\"Permission to use, copy, modify, and distribute this software for any
@@ -12,7 +12,7 @@
 .\"WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 .\"ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\"OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-.Dd $Mdocdate: March 16 2014 $
+.Dd $Mdocdate: January 4 2015 $
 .Dt REOP 1
 .Os
 .Sh NAME
@@ -20,140 +20,196 @@
 .Nd reasonable expectation of privacy
 .Sh SYNOPSIS
 .Nm reop
+.Fl G
+.Op Fl n
+.Op Fl i Ar identity
+.Op Fl p Ar public-key-file Fl s Ar secret-key-file
+.Nm reop
 .Fl D
-.Fl x Ar encfile
+.Op Fl i Ar identity
+.Op Fl p Ar public-key-file Fl s Ar secret-key-file
+.Fl m Ar message-file
+.Op x Ar ciphertext-file
 .Nm reop
 .Fl E
 .Op Fl 1b
-.Op Fl i Ar ident
-.Fl m Ar message
-.Fl p Ar pubkey
-.Fl s Ar seckey
+.Op Fl i Ar identity
+.Op Fl p Ar public-key-file Fl s Ar secret-key-file
+.Fl m Ar message-file
+.Op x Ar ciphertext-file
 .Nm reop
 .Fl S
 .Op Fl e
-.Op Fl x Ar sigfile
-.Fl s Ar seckey
-.Fl m Ar message
+.Op Fl x Ar signature-file
+.Fl s Ar secret-key-file
+.Fl m Ar message-file
 .Nm reop
 .Fl V
 .Op Fl eq
-.Op Fl x Ar sigfile
-.Fl p Ar pubkey
-.Fl m Ar message
+.Op Fl x Ar signature-file
+.Fl p Ar public-key-file
+.Fl m Ar message-file
 .Sh DESCRIPTION
-The
 .Nm
-utility creates and verifies cryptographic signatures and encrypts and
-decrypts files.
-The mode of operation is selected with the following options:
-.Bl -tag -width Dsssigfile
-.It Fl D
-Decryption, both public key and symmetric.
-.It Fl E
-Encryption, both public key and symmetric.
-When run without a public key, will ask for a password and
-perform symmetric encryption.
+can encrypt and decrypt files, using either symmetric or public key
+cryptography.
+.Nm
+can also cryptographically sign and verify files, using public key
+cryptography.
 .Pp
-When run with a public key, will encrypt the message so that it can be
-decrypted by the matching secret key.
-Public key encryption also uses encryptor's secret key to authenticate the
-message.
-Once encrypted, the message can only be decrypted by recipient's secret key.
-Although authenticated, messages are deniable (forgeable by recipient).
+Select the mode of operation with the following options:
+.Bl -tag
+.It Fl D
+Decrypt a message-file.
+.It Fl E
+Encrypt a message-file.
+.Pp
+When not given a public-key-file,
+.Nm
+will ask for a passphrase, derive a key from the passphrase, and encrypt the
+message-file using the key.
+.Pp
+When given a public-key-file,
+.Nm
+will encrypt the message-file so that it can only be decrypted with the
+matching secret-key-file. Public key encryption also uses the secret key to
+authenticate the message.
+.Pp
+Although authenticated, messages are deniable: the recipient could forge
+them.
 .It Fl G
 Generate a new key pair.
 .It Fl S
-Sign the specified message file and create a signature.
+Sign the message-file and create a signature-file.
 .It Fl V
-Verify the message and signature match.
+Verify that the signature in the signature-file matches the contents of the
+message-file.
 .El
 .Pp
 The other options are as follows:
 .Bl -tag -width Dsssignature
 .It Fl 1
-Encrypt messages using older v1 format.
-.It Fl b
-Use a binary format for encrypted files.
-This can result in a considerable space savings over the default base64
-encoded format.
-Decryption automatically detects the correct format.
-.It Fl e
-When signing, create a signed message instead of just a signature.
-.It Fl i Ar ident
-Specify the ident to be created during key generation or
-looked up when using public cryptography.
-.It Fl m Ar message
-When signing, the file containing the message to sign.
-When verifying, the file containing the message to verify.
-When encrypting or decrypting, the plaintext.
-.It Fl n
-Do not ask for a passphrase during key generation.
-Otherwise,
+Encrypt messages using the deprecated version 1 format. When decrypting
+messages,
 .Nm
-will prompt the user for a passphrase to protect the secret key.
-.It Fl p Ar pubkey
-Public key produced by
-.Fl G ,
-and used by other commands.
-.It Fl q
-Quiet mode.
-Suppress informational output.
-.It Fl s Ar seckey
-Secret (private) key produced by
-.Fl G ,
-and used by other commands.
-.It Fl x Ar xfile
-The signature file to create or verify.
-The default is
-.Ar message Ns .sig .
-When encrypting, the encrypted file.
-The default is
-.Ar message Ns .enc .
-.El
+detects the format automatically.
+.It Fl b
+When encrypting, use a binary format for the cipertext-file. Without this
+option,
+.Nm
+encodes files using base-64 encoding, which uses more space than the binary
+format. Base-64 encoded data is plain text and is easy to copy and paste.
+When decrypting files,
+.Nm
+automatically detects the correct format.
+.It Fl e
+When signing, combine the message and its signature in the signature-file.
+Without this option,
+.Nm
+puts a detached signature in the signature-file.
+.It Fl i Ar identity
+During key pair generation,
+.Nm
+will tag the key pair with the given identity. When looking up key pairs,
+.Nm
+will search for a pair tagged with the given identity.
+.It Fl m Ar message-file
+When signing, the file containing the message to sign. When verifying, the
+file containing the message to verify. When encrypting or decrypting, the
+plaintext.
+.It Fl n
+Do not ask for a passphrase during key generation. Without this option,
+.Nm
+will prompt you for a passphrase to protect the secret key.
 .Pp
+The purpose of protecting the secret key with a passphrase is so that, if
+somebody steals the secret key form your computer, they still cannot use it
+unless they also learn the passhrase.
+.It Fl p Ar public-key-file
+A public key produced by
+.Fl G .
+.It Fl q
+Quiet mode. Suppress informational output.
+.It Fl s Ar secret-key-file
+A secret (private) key produced by
+.Fl G .
+.It Fl x Ar xfile
+When signing of verifying, the signature-file. Without this option,
+.Nm
+assumes
+.Ar message-file Ns .sig .
+When encrypting, the ciphertext-file. Without this option,
+.Nm
+assumes
+.Ar message-file Ns .enc .
+.El
+.Sh FILES
 The key and data files created by
 .Nm
-have similar format.
-A plain text line of the form ident: is used to match key pairs.
-Most of the actual key data follows and is base64 encoded.
+have similar format. A plain text line of the form ident: 
+.Ar identity
+is used to match key pairs. The key or ciphertext follows and is base-64
+encoded.
 .Pp
-The
+(If the file was encrypted with the
+.Fl b
+option, the ciphertext is in binary format.)
+.Pp
+.Nm
+searches the
 .Pa ~/.reop
-directory is searched for default keys named:
-.Bl -tag -width pubkeyring -compact
+directory for default keys named:
+.Bl -tag
 .It Pa seckey
-User's secret key
+Your secret key
 .It Pa pubkey
-User's public key
+Your public key
 .It Pa pubkeyring
-User's set trusted of trusted third party keys, searched by ident.
+Your set of trusted third party keys, searched by
+.Ar identity .
 .El
+The
+.Pa pubkeyring
+file is simply a sequence of public key files, concatenated into one, and
+separated by newlines.
 .Sh EXIT STATUS
 .Ex -std reop
-It may fail because of one of the following reasons:
+It may fail for one of the following reasons:
 .Pp
 .Bl -bullet -compact
 .It
 Some necessary files do not exist.
 .It
-Entered passphrase is incorrect.
+The passphrase is incorrect.
 .It
-The message file was corrupted and its signature does not match.
+The message-file was corrupted and its signature does not match.
 .It
-The message file is too large.
+The message-file is too large.
 .El
 .Sh EXAMPLES
-Create a new key pair.
+Create a new key pair, and store the new key files in
+.Pa ~/.reop :
+.Dl $ reop -G
+.Pp
+Create a new key pair:
 .Dl $ reop -G -p newkey.pub -s newkey.sec
 .Pp
-Create a new key pair, assuming the
-.Pa ~/.reop
-directory exists:
-.Dl $ reop -G
+Encrypt a file with symmetric encryption:
+.Dl $ ./reop -E -m message.txt -x message.txt.enc
+.Pp
+Encrypt a file with public key encryption:
+.Dl $ ./reop -E -p your-friend.pub -m message.txt -x message.txt.enc
+.Pp
+Encrypt a file with public key encryption, assuming your friend's public key
+is in
+.Pa ~/.reop/pubkeyring :
+.Dl $ ./reop -E -i yourfriend@example.org -m hello.txt -x hello.txt.enc
 .Pp
 Sign a file, specifying a signature name:
 .Dl $ reop -S -s key.sec -m message.txt -x msg.sig
 .Pp
 Verify a signed message, using the default identity:
 .Dl $ reop -V -x generalsorders.sig
+.Pp
+Add a new friend's public key to your keyring:
+.Dl $ cat new-friend.pub >> ~/.reop/pubkeyring

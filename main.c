@@ -36,12 +36,12 @@ usage(const char *error)
 {
 	if (error)
 		fprintf(stderr, "%s\n", error);
-	fprintf(stderr, "usage:"
-	    "\treop -G [-n] [-i ident] [-p pubkey -s seckey]\n"
-	    "\treop -D [-i ident] [-p pubkey -s seckey] -m message [-x encfile]\n"
-	    "\treop -E [-1b] [-i ident] [-p pubkey -s seckey] -m message [-x encfile]\n"
-	    "\treop -S [-e] [-x sigfile] -s seckey -m message\n"
-	    "\treop -V [-eq] [-x sigfile] -p pubkey -m message\n"
+	fprintf(stderr, "Usage:\n"
+"  reop -G [-n] [-i identity] [-p public-key-file -s secret-key-file]\n"
+"  reop -D [-i identity] [-p public-key-file -s secret-key-file] -m message-file [-x ciphertext-file]\n"
+"  reop -E [-1b] [-i identity] [-p public-key-file -s secret-key-file] -m message-file [-x ciphertext-file]\n"
+"  reop -S [-e] [-x signature-file] -s secret-key-file -m message-file\n"
+"  reop -V [-eq] [-x signature-file] -p public-key-file -m message-file\n"
 	    );
 	exit(1);
 }
@@ -141,7 +141,7 @@ main(int argc, char **argv)
 	case ENCRYPT:
 	case DECRYPT:
 		if (!msgfile)
-			usage("need msgfile");
+			usage("You must specify a message-file");
 		if (!xfile) {
 			if (strcmp(msgfile, "-") == 0)
 				usage("must specify encfile with - message");
