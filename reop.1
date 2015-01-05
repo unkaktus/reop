@@ -1,4 +1,4 @@
- .\"
+.\"
 .\"Copyright (c) 2014 Ted Unangst <tedu@tedunangst.com>
 .\"
 .\"Permission to use, copy, modify, and distribute this software for any
@@ -123,7 +123,7 @@ Do not ask for a passphrase during key generation. Without this option,
 will prompt you for a passphrase to protect the secret key.
 .Pp
 The purpose of protecting the secret key with a passphrase is so that, if
-somebody steals the secret key form your computer, they still cannot use it
+somebody steals the secret key from your computer, they still cannot use it
 unless they also learn the passhrase.
 .It Fl p Ar public-key-file
 A public key produced by
@@ -146,8 +146,8 @@ assumes
 .Sh FILES
 The key and data files created by
 .Nm
-have similar format. A plain text line of the form ident: 
-.Ar identity
+have similar format. A plain text line of the form
+.Dl ident: Ar identity
 is used to match key pairs. The key or ciphertext follows and is base-64
 encoded.
 .Pp
@@ -168,6 +168,7 @@ Your public key
 Your set of trusted third party keys, searched by
 .Ar identity .
 .El
+.Pp
 The
 .Pa pubkeyring
 file is simply a sequence of public key files, concatenated into one, and
