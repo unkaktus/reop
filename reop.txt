@@ -1,0 +1,150 @@
+REOP(1)			    General Commands Manual		       REOP(1)
+
+NAME
+     reop - reasonable expectation of privacy
+
+SYNOPSIS
+     reop -G [-n] [-i identity] [-p public-key-file -s secret-key-file]
+     reop -D [-i identity] [-p public-key-file -s secret-key-file]
+	  -m message-file [x ciphertext-file]
+     reop -E [-1b] [-i identity] [-p public-key-file -s secret-key-file]
+	  -m message-file [x ciphertext-file]
+     reop -S [-e] [-x signature-file] -s secret-key-file -m message-file
+     reop -V [-eq] [-x signature-file] -p public-key-file -m message-file
+
+DESCRIPTION
+     reop can encrypt and decrypt files, using either symmetric or public key
+     cryptography.  reop can also cryptographically sign and verify files,
+     using public key cryptography.
+
+     Select the mode of operation with the following options:
+
+     -D		 Decrypt a message-file.
+
+     -E		 Encrypt a message-file.
+
+		 When not given a public-key-file, reop will ask for a
+		 passphrase, derive a key from the passphrase, and encrypt the
+		 message-file using the key.
+
+		 When given a public-key-file, reop will encrypt the message-
+		 file so that it can only be decrypted with the matching
+		 secret-key-file. Public key encryption also uses the secret
+		 key to authenticate the message.
+
+		 Although authenticated, messages are deniable: the recipient
+		 could forge them.
+
+     -G		 Generate a new key pair.
+
+     -S		 Sign the message-file and create a signature-file.
+
+     -V		 Verify that the signature in the signature-file matches the
+		 contents of the message-file.
+
+     The other options are as follows:
+
+     -1		   Encrypt messages using the deprecated version 1 format.
+		   When decrypting messages, reop detects the format
+		   automatically.
+
+     -b		   When encrypting, use a binary format for the cipertext-
+		   file. Without this option, reop encodes files using base-64
+		   encoding, which uses more space than the binary format.
+		   Base-64 encoded data is plain text and is easy to copy and
+		   paste.  When decrypting files, reop automatically detects
+		   the correct format.
+
+     -e		   When signing, combine the message and its signature in the
+		   signature-file.  Without this option, reop puts a detached
+		   signature in the signature-file.
+
+     -i identity   During key pair generation, reop will tag the key pair with
+		   the given identity. When looking up key pairs, reop will
+		   search for a pair tagged with the given identity.
+
+     -m message-file
+		   When signing, the file containing the message to sign. When
+		   verifying, the file containing the message to verify. When
+		   encrypting or decrypting, the plaintext.
+
+     -n		   Do not ask for a passphrase during key generation. Without
+		   this option, reop will prompt you for a passphrase to
+		   protect the secret key.
+
+		   The purpose of protecting the secret key with a passphrase
+		   is so that, if somebody steals the secret key from your
+		   computer, they still cannot use it unless they also learn
+		   the passhrase.
+
+     -p public-key-file
+		   A public key produced by -G.
+
+     -q		   Quiet mode. Suppress informational output.
+
+     -s secret-key-file
+		   A secret (private) key produced by -G.
+
+     -x xfile	   When signing of verifying, the signature-file. Without this
+		   option, reop assumes message-file.sig.  When encrypting,
+		   the ciphertext-file. Without this option, reop assumes
+		   message-file.enc.
+
+FILES
+     The key and data files created by reop have similar format. A plain text
+     line of the form
+	   ident: identity
+     is used to match key pairs. The key or ciphertext follows and is base-64
+     encoded.
+
+     (If the file was encrypted with the -b option, the ciphertext is in
+     binary format.)
+
+     reop searches the ~/.reop directory for default keys named:
+
+     seckey			       Your secret key
+
+     pubkey			       Your public key
+
+     pubkeyring			       Your set of trusted third party keys,
+				       searched by identity.
+
+     The pubkeyring file is simply a sequence of public key files,
+     concatenated into one, and separated by newlines.
+
+EXIT STATUS
+     The reop utility exits 0 on success, and >0 if an error occurs.  It may
+     fail for one of the following reasons:
+
+     o	 Some necessary files do not exist.
+     o	 The passphrase is incorrect.
+     o	 The message-file was corrupted and its signature does not match.
+     o	 The message-file is too large.
+
+EXAMPLES
+     Create a new key pair, and store the new key files in ~/.reop:
+	   $ reop -G
+
+     Create a new key pair:
+	   $ reop -G -p newkey.pub -s newkey.sec
+
+     Encrypt a file with symmetric encryption:
+	   $ ./reop -E -m message.txt -x message.txt.enc
+
+     Encrypt a file with public key encryption:
+	   $ ./reop -E -p your-friend.pub -m message.txt -x message.txt.enc
+
+     Encrypt a file with public key encryption, assuming your friend's public
+     key is in ~/.reop/pubkeyring:
+	   $ ./reop -E -i yourfriend@example.org -m hello.txt -x hello.txt.enc
+
+     Sign a file, specifying a signature name:
+	   $ reop -S -s key.sec -m message.txt -x msg.sig
+
+     Verify a signed message, using the default identity:
+	   $ reop -V -x generalsorders.sig
+
+     Add a new friend's public key to your keyring:
+	   $ cat new-friend.pub >> ~/.reop/pubkeyring
+
+OpenBSD 5.6			January 4, 2015			   OpenBSD 5.6

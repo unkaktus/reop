@@ -25,6 +25,8 @@ reop -G -i tedu # create tedu key pair
 reop -E -i ralph -m message # encrypt a message for ralph
 reop -D -x message.enc # ralph decrypts my message
 
+The full manual is in reop.1. Also available preformatted as reop.txt.
+
 I had a short lived plan to support the real OpenPGP standard, but as I was
 scrolling through it, I came across the words “ASN.1 Object Identifiers” and my
 monitor went blank to prevent permanent damage. As it is, reop implements a
