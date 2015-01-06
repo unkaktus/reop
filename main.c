@@ -37,11 +37,13 @@ usage(const char *error)
 	if (error)
 		fprintf(stderr, "%s\n", error);
 	fprintf(stderr, "Usage:\n"
-"  reop -G [-n] [-i identity] [-p public-key-file -s secret-key-file]\n"
-"  reop -D [-i identity] [-p public-key-file -s secret-key-file] -m message-file [-x ciphertext-file]\n"
-"  reop -E [-1b] [-i identity] [-p public-key-file -s secret-key-file] -m message-file [-x ciphertext-file]\n"
-"  reop -S [-e] [-x signature-file] -s secret-key-file -m message-file\n"
-"  reop -V [-eq] [-x signature-file] -p public-key-file -m message-file\n"
+"\treop -G [-n] [-i identity] [-p public-key-file -s secret-key-file]\n"
+"\treop -D [-i identity] [-p public-key-file -s secret-key-file]\n"
+"\t\t-m message-file [-x ciphertext-file]\n"
+"\treop -E [-1b] [-i identity] [-p public-key-file -s secret-key-file]\n"
+"\t\t-m message-file [-x ciphertext-file]\n"
+"\treop -S [-e] [-x signature-file] -s secret-key-file -m message-file\n"
+"\treop -V [-eq] [-x signature-file] -p public-key-file -m message-file\n"
 	    );
 	exit(1);
 }
