@@ -72,11 +72,12 @@ message-file using the key.
 When given a public-key-file,
 .Nm
 will encrypt the message-file so that it can only be decrypted with the
-matching secret-key-file. Public key encryption also uses the secret key to
-authenticate the message.
+matching secret-key-file.
+Public key encryption also uses the secret key to authenticate the message.
 .Pp
-Although authenticated, messages are deniable: the recipient could forge
-them.
+Although authenticated, messages are deniable.
+The recipient will be able to verify the sender, but unable to prove this
+to anyone else.
 .It Fl G
 Generate a new key pair.
 .It Fl S
@@ -87,18 +88,20 @@ message-file.
 .El
 .Pp
 The other options are as follows:
-.Bl -tag -width Dsssignature
+.Bl -tag
 .It Fl 1
-Encrypt messages using the deprecated version 1 format. When decrypting
-messages,
+(The number one.)
+Encrypt messages using the deprecated version 1 format.
+When decrypting messages,
 .Nm
 detects the format automatically.
 .It Fl b
-When encrypting, use a binary format for the cipertext-file. Without this
-option,
+When encrypting, use a binary format for the cipertext-file.
+Without this option,
 .Nm
 encodes files using base-64 encoding, which uses more space than the binary
-format. Base-64 encoded data is plain text and is easy to copy and paste.
+format.
+Base-64 encoded data is plain text and is easy to copy and paste.
 When decrypting files,
 .Nm
 automatically detects the correct format.
@@ -110,15 +113,17 @@ puts a detached signature in the signature-file.
 .It Fl i Ar identity
 During key pair generation,
 .Nm
-will tag the key pair with the given identity. When looking up key pairs,
+will tag the key pair with the given identity.
+When looking up key pairs,
 .Nm
 will search for a pair tagged with the given identity.
 .It Fl m Ar message-file
-When signing, the file containing the message to sign. When verifying, the
-file containing the message to verify. When encrypting or decrypting, the
-plaintext.
+When signing, the file containing the message to sign.
+When verifying, the file containing the message to verify.
+When encrypting or decrypting, the plaintext.
 .It Fl n
-Do not ask for a passphrase during key generation. Without this option,
+Do not ask for a passphrase during key generation.
+Without this option,
 .Nm
 will prompt you for a passphrase to protect the secret key.
 .Pp
@@ -129,16 +134,19 @@ unless they also learn the passhrase.
 A public key produced by
 .Fl G .
 .It Fl q
-Quiet mode. Suppress informational output.
+Quiet mode.
+Suppress informational output.
 .It Fl s Ar secret-key-file
 A secret (private) key produced by
 .Fl G .
 .It Fl x Ar xfile
-When signing of verifying, the signature-file. Without this option,
+When signing of verifying, the signature-file.
+Without this option,
 .Nm
 assumes
 .Ar message-file Ns .sig .
-When encrypting, the ciphertext-file. Without this option,
+When encrypting, the ciphertext-file.
+Without this option,
 .Nm
 assumes
 .Ar message-file Ns .enc .
@@ -146,10 +154,11 @@ assumes
 .Sh FILES
 The key and data files created by
 .Nm
-have similar format. A plain text line of the form
+have similar format.
+A plain text line of the form
 .Dl ident: Ar identity
-is used to match key pairs. The key or ciphertext follows and is base-64
-encoded.
+is used to match key pairs.
+The key or ciphertext follows and is base-64 encoded.
 .Pp
 (If the file was encrypted with the
 .Fl b
