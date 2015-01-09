@@ -28,7 +28,7 @@ typedef struct { int v; } kdf_confirm;
 typedef struct { int v; } opt_binary;
 
 /* generate a keypair */
-struct reop_keypair reop_generate(int rounds, const char *ident);
+struct reop_keypair reop_generate(const char *ident);
 
 /* pubkey functions */
 const struct reop_pubkey *reop_getpubkey(const char *pubkeyfile, const char *ident);
@@ -37,9 +37,9 @@ const char *reop_encodepubkey(const struct reop_pubkey *pubkey);
 void reop_freepubkey(const struct reop_pubkey *reop_pubkey);
 
 /* seckey functions */
-const struct reop_seckey *reop_getseckey(const char *seckeyfile, kdf_allowstdin allowstdin);
-const struct reop_seckey *reop_parseseckey(const char *seckeydata);
-const char *reop_encodeseckey(const struct reop_seckey *seckey);
+const struct reop_seckey *reop_getseckey(const char *seckeyfile, const char *password);
+const struct reop_seckey *reop_parseseckey(const char *seckeydata, const char *password);
+const char *reop_encodeseckey(const struct reop_seckey *seckey, const char *password);
 void reop_freeseckey(const struct reop_seckey *reop_seckey);
 
 /* sign and verify */
@@ -68,10 +68,11 @@ void pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfil
     const char *msgfile, const char *encfile, opt_binary binary);
 void v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
     const char *msgfile, const char *encfile, opt_binary binary);
-void symencrypt(const char *msgfile, const char *encfile, int rounds, opt_binary binary);
+void symencrypt(const char *msgfile, const char *encfile, opt_binary binary);
 void decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
     const char *encfile);
-void generate(const char *pubkeyfile, const char *seckeyfile, int rounds, const char *ident);
+void generate(const char *pubkeyfile, const char *seckeyfile, const char *ident,
+    const char *password);
 
 void signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
     int embedded);

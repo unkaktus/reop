@@ -440,37 +440,40 @@ readkeyfile(const char *filename, void *key, size_t keylen, char *ident)
  * if rounds is 0 (no password requested), generates a dummy zero key.
  */
 static void
-kdf(uint8_t *salt, size_t saltlen, int rounds, kdf_allowstdin allowstdin,
-    kdf_confirm confirm, uint8_t *key, size_t keylen)
+kdf(uint8_t *salt, size_t saltlen, int rounds, const char *password,
+    kdf_allowstdin allowstdin, kdf_confirm confirm, uint8_t *key, size_t keylen)
 {
-	char pass[1024];
-	int rppflags = RPP_ECHO_OFF;
 
 	if (rounds == 0) {
 		memset(key, 0, keylen);
 		return;
 	}
 
-	if (allowstdin.v && !isatty(STDIN_FILENO))
-		rppflags |= RPP_STDIN;
-	if (!readpassphrase("passphrase: ", pass, sizeof(pass), rppflags))
-		errx(1, "unable to read passphrase");
-	if (strlen(pass) == 0)
-		errx(1, "please provide a password");
-	if (confirm.v && !(rppflags & RPP_STDIN)) {
-		char pass2[1024];
-
-		if (!readpassphrase("confirm passphrase: ", pass2,
-		    sizeof(pass2), rppflags))
+	char passbuf[1024];
+	if (!password) {
+		int rppflags = RPP_ECHO_OFF;
+		if (allowstdin.v && !isatty(STDIN_FILENO))
+			rppflags |= RPP_STDIN;
+		if (!readpassphrase("passphrase: ", passbuf, sizeof(passbuf), rppflags))
 			errx(1, "unable to read passphrase");
-		if (strcmp(pass, pass2) != 0)
-			errx(1, "passwords don't match");
-		sodium_memzero(pass2, sizeof(pass2));
+		if (strlen(passbuf) == 0)
+			errx(1, "please provide a password");
+		if (confirm.v && !(rppflags & RPP_STDIN)) {
+			char pass2[1024];
+
+			if (!readpassphrase("confirm passphrase: ", pass2,
+			    sizeof(pass2), rppflags))
+				errx(1, "unable to read passphrase");
+			if (strcmp(passbuf, pass2) != 0)
+				errx(1, "passwords don't match");
+			sodium_memzero(pass2, sizeof(pass2));
+		}
+		password = passbuf;
 	}
-	if (bcrypt_pbkdf(pass, strlen(pass), salt, saltlen, key,
+	if (bcrypt_pbkdf(password, strlen(password), salt, saltlen, key,
 	    keylen, rounds) == -1)
 		errx(1, "bcrypt pbkdf");
-	sodium_memzero(pass, sizeof(pass));
+	sodium_memzero(passbuf, sizeof(passbuf));
 }
 
 /*
@@ -479,14 +482,20 @@ kdf(uint8_t *salt, size_t saltlen, int rounds, kdf_allowstdin allowstdin,
  * are still encrypted with a null key.
  */
 void
-encryptseckey(struct reop_seckey *seckey)
+encryptseckey(struct reop_seckey *seckey, const char *password)
 {
 	uint8_t symkey[SYMKEYBYTES];
 	kdf_allowstdin allowstdin = { 1 };
 	kdf_confirm confirm = { 1 };
-	int rounds = ntohl(seckey->kdfrounds);
 
-	kdf(seckey->salt, sizeof(seckey->salt), rounds,
+	int rounds = 42;
+	if (password && strlen(password) == 0)
+		rounds = 0;
+
+	randombytes(seckey->salt, sizeof(seckey->salt));
+	seckey->kdfrounds = htonl(rounds);
+
+	kdf(seckey->salt, sizeof(seckey->salt), rounds, password,
 	    allowstdin, confirm, symkey, sizeof(symkey));
 	symencryptraw(seckey->sigkey, sizeof(seckey->sigkey) + sizeof(seckey->enckey),
 	    seckey->box, symkey);
@@ -494,16 +503,18 @@ encryptseckey(struct reop_seckey *seckey)
 }
 
 void
-decryptseckey(struct reop_seckey *seckey, kdf_allowstdin allowstdin)
+decryptseckey(struct reop_seckey *seckey, const char *password)
 {
 	if (memcmp(seckey->kdfalg, KDFALG, 2) != 0)
 		errx(1, "unsupported KDF");
 
 	uint8_t symkey[SYMKEYBYTES];
+	kdf_allowstdin allowstdin = { 0 };
 	kdf_confirm confirm = { 0 };
+
 	int rounds = ntohl(seckey->kdfrounds);
 
-	kdf(seckey->salt, sizeof(seckey->salt), rounds,
+	kdf(seckey->salt, sizeof(seckey->salt), rounds, password,
 	    allowstdin, confirm, symkey, sizeof(symkey));
 	symdecryptraw(seckey->sigkey, sizeof(seckey->sigkey) + sizeof(seckey->enckey),
 	    seckey->box, symkey);
@@ -526,7 +537,7 @@ findpubkey(const char *ident)
 		char line[1024];
 		char buf[1024];
 		int maxkeys = 0;
-		
+
 		done = 1;
 		char namebuf[1024];
 		const char *keyringname = gethomefile("pubkeyring", namebuf);
@@ -619,7 +630,7 @@ reop_freepubkey(const struct reop_pubkey *pubkey)
  * 2. default seckey file
  */
 const struct reop_seckey *
-reop_getseckey(const char *seckeyfile, kdf_allowstdin allowstdin)
+reop_getseckey(const char *seckeyfile, const char *password)
 {
 	struct reop_seckey *seckey = malloc(sizeof(*seckey));
 	if (!seckey)
@@ -634,7 +645,7 @@ reop_getseckey(const char *seckeyfile, kdf_allowstdin allowstdin)
 	}
 
 	readkeyfile(seckeyfile, seckey, seckeysize, seckey->ident);
-	decryptseckey(seckey, allowstdin);
+	decryptseckey(seckey, password);
 	return seckey;
 }
 
@@ -685,7 +696,7 @@ writekeyfile(const char *filename, const char *info, const void *key,
  * generate a complete key pair (actually two, for signing and encryption)
  */
 struct reop_keypair
-reop_generate(int rounds, const char *ident)
+reop_generate(const char *ident)
 {
 	uint8_t randomid[RANDOMIDLEN];
 
@@ -707,8 +718,6 @@ reop_generate(int rounds, const char *ident)
 	memcpy(seckey->encalg, ENCKEYALG, 2);
 	memcpy(seckey->symalg, SYMALG, 2);
 	memcpy(seckey->kdfalg, KDFALG, 2);
-	seckey->kdfrounds = htonl(rounds);
-	randombytes(seckey->salt, sizeof(seckey->salt));
 
 	memcpy(pubkey->randomid, randomid, RANDOMIDLEN);
 	memcpy(pubkey->sigalg, SIGALG, 2);
@@ -742,13 +751,12 @@ reop_encodepubkey(const struct reop_pubkey *pubkey)
  * parse seckey data into struct
  */
 const struct reop_seckey *
-reop_parseseckey(const char *seckeydata)
+reop_parseseckey(const char *seckeydata, const char *password)
 {
 	struct reop_seckey *seckey = xmalloc(sizeof(*seckey));
 	parsekeydata(seckeydata, seckey, seckeysize, seckey->ident);
 
-	kdf_allowstdin allowstdin = { 0 };
-	decryptseckey(seckey, allowstdin);
+	decryptseckey(seckey, password);
 	return seckey;
 }
 
@@ -756,23 +764,23 @@ reop_parseseckey(const char *seckeydata)
  * encode a seckey to a string
  */
 const char *
-reop_encodeseckey(const struct reop_seckey *seckey)
+reop_encodeseckey(const struct reop_seckey *seckey, const char *password)
 {
 	struct reop_seckey copy = *seckey;
-	encryptseckey(&copy);
+	encryptseckey(&copy, password);
 	const char *rv = encodekey("SECRET KEY", &copy, seckeysize, seckey->ident);
 	sodium_memzero(&copy, sizeof(copy));
 	return rv;
 }
 
 void
-generate(const char *pubkeyfile, const char *seckeyfile,
-    int rounds, const char *ident)
+generate(const char *pubkeyfile, const char *seckeyfile, const char *ident,
+    const char *password)
 {
 
-	struct reop_keypair keypair = reop_generate(rounds, ident);
+	struct reop_keypair keypair = reop_generate(ident);
 	struct reop_seckey copy = *keypair.seckey;
-	encryptseckey(&copy);
+	encryptseckey(&copy, password);
 
 	char secnamebuf[1024];
 	if (!seckeyfile)
@@ -891,8 +899,7 @@ signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
 	uint64_t msglen;
 	uint8_t *msg = readall(msgfile, &msglen);
 
-	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
-	const struct reop_seckey *seckey = reop_getseckey(seckeyfile, allowstdin);
+	const struct reop_seckey *seckey = reop_getseckey(seckeyfile, NULL);
 	if (!seckey)
 		errx(1, "no seckey");
 
@@ -1054,8 +1061,7 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	const struct reop_pubkey *pubkey = reop_getpubkey(pubkeyfile, ident);
 	if (!pubkey)
 		errx(1, "no pubkey");
-	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
-	const struct reop_seckey *seckey = reop_getseckey(seckeyfile, allowstdin);
+	const struct reop_seckey *seckey = reop_getseckey(seckeyfile, NULL);
 	if (!seckey)
 		errx(1, "no seckey");
 
@@ -1093,8 +1099,7 @@ v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	const struct reop_pubkey *pubkey = reop_getpubkey(pubkeyfile, ident);
 	if (!pubkey)
 		errx(1, "no pubkey");
-	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
-	const struct reop_seckey *seckey = reop_getseckey(seckeyfile, allowstdin);
+	const struct reop_seckey *seckey = reop_getseckey(seckeyfile, NULL);
 	if (!seckey)
 		errx(1, "no seckey");
 
@@ -1122,7 +1127,7 @@ v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
  * encrypt a file using symmetric cryptography (a password)
  */
 void
-symencrypt(const char *msgfile, const char *encfile, int rounds, opt_binary binary)
+symencrypt(const char *msgfile, const char *encfile, opt_binary binary)
 {
 	struct symmsg symmsg;
 	uint8_t symkey[SYMKEYBYTES];
@@ -1132,11 +1137,13 @@ symencrypt(const char *msgfile, const char *encfile, int rounds, opt_binary bina
 	uint64_t msglen;
 	uint8_t *msg = readall(msgfile, &msglen);
 
+	int rounds = 42;
+
 	memcpy(symmsg.kdfalg, KDFALG, 2);
 	memcpy(symmsg.symalg, SYMALG, 2);
 	symmsg.kdfrounds = htonl(rounds);
 	randombytes(symmsg.salt, sizeof(symmsg.salt));
-	kdf(symmsg.salt, sizeof(symmsg.salt), rounds,
+	kdf(symmsg.salt, sizeof(symmsg.salt), rounds, NULL,
 	    allowstdin, confirm, symkey, sizeof(symkey));
 
 	symencryptraw(msg, msglen, symmsg.box, symkey);
@@ -1243,16 +1250,15 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		encdata = NULL;
 	}
 
-	kdf_allowstdin allowstdin = { strcmp(encfile, "-") != 0 };
-
 	if (memcmp(hdr.alg, SYMALG, 2) == 0) {
 		kdf_confirm confirm = { 0 };
+		kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 		if (hdrsize != sizeof(hdr.symmsg))
  			goto fail;
 		if (memcmp(hdr.symmsg.kdfalg, KDFALG, 2) != 0)
 			errx(1, "unsupported KDF");
 		int rounds = ntohl(hdr.symmsg.kdfrounds);
-		kdf(hdr.symmsg.salt, sizeof(hdr.symmsg.salt), rounds,
+		kdf(hdr.symmsg.salt, sizeof(hdr.symmsg.salt), rounds, NULL,
 		    allowstdin, confirm, symkey, sizeof(symkey));
 		symdecryptraw(msg, msglen, hdr.symmsg.box, symkey);
 		sodium_memzero(symkey, sizeof(symkey));
@@ -1262,7 +1268,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		const struct reop_pubkey *pubkey = reop_getpubkey(pubkeyfile, ident);
 		if (!pubkey)
 			errx(1, "no pubkey");
-		const struct reop_seckey *seckey = reop_getseckey(seckeyfile, allowstdin);
+		const struct reop_seckey *seckey = reop_getseckey(seckeyfile, NULL);
 		if (!seckey)
 			errx(1, "no seckey");
 		if (memcmp(hdr.encmsg.pubrandomid, seckey->randomid, RANDOMIDLEN) != 0 ||
@@ -1283,7 +1289,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		const struct reop_pubkey *pubkey = reop_getpubkey(pubkeyfile, ident);
 		if (!pubkey)
 			errx(1, "no pubkey");
-		const struct reop_seckey *seckey = reop_getseckey(seckeyfile, allowstdin);
+		const struct reop_seckey *seckey = reop_getseckey(seckeyfile, NULL);
 		if (!seckey)
 			errx(1, "no seckey");
 		/* pub/sec pairs work both ways */
@@ -1304,7 +1310,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 	} else if (memcmp(hdr.alg, OLDEKCALG, 2) == 0) {
 		if (hdrsize != sizeof(hdr.oldekcmsg))
 			goto fail;
-		const struct reop_seckey *seckey = reop_getseckey(seckeyfile, allowstdin);
+		const struct reop_seckey *seckey = reop_getseckey(seckeyfile, NULL);
 		if (!seckey)
 			errx(1, "no seckey");
 		if (memcmp(hdr.oldekcmsg.pubrandomid, seckey->randomid, RANDOMIDLEN) != 0)

@@ -8,7 +8,7 @@ ffi.cdef(header)
 
 local lib = ffi.load("../libreop.so")
 
-local keypair = lib.reop_generate(0, "luatest")
+local keypair = lib.reop_generate("luatest")
 local msg = "Attack at midnight!"
 
 local sig = lib.reop_sign(keypair.seckey, msg, msg:len())

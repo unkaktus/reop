@@ -55,10 +55,11 @@ main(int argc, char **argv)
 	    *xfile = NULL;
 	char xfilebuf[1024];
 	const char *ident = NULL;
-	int ch, rounds;
+	int ch;
 	int embedded = 0;
 	int quiet = 0;
 	int v1compat = 0;
+	const char *password = NULL;
 	opt_binary binary = { 0 };
 	enum {
 		NONE,
@@ -68,8 +69,6 @@ main(int argc, char **argv)
 		SIGN,
 		VERIFY
 	} verb = NONE;
-
-	rounds = 42;
 
 	while ((ch = getopt(argc, argv, "1CDEGSVbei:m:np:qs:x:")) != -1) {
 		switch (ch) {
@@ -114,7 +113,7 @@ main(int argc, char **argv)
 			msgfile = optarg;
 			break;
 		case 'n':
-			rounds = 0;
+			password = "";
 			break;
 		case 'p':
 			pubkeyfile = optarg;
@@ -181,7 +180,7 @@ main(int argc, char **argv)
 			else
 				pubencrypt(pubkeyfile, ident, seckeyfile, msgfile, xfile, binary);
 		} else
-			symencrypt(msgfile, xfile, rounds, binary);
+			symencrypt(msgfile, xfile, binary);
 		break;
 	case GENERATE:
 		if (!ident && !(ident= getenv("USER")))
@@ -202,7 +201,7 @@ main(int argc, char **argv)
 			if (mkdir(buf, 0700) == -1 && errno != EEXIST)
 				err(1, "Unable to create ~/.reop");
 		}
-		generate(pubkeyfile, seckeyfile, rounds, ident);
+		generate(pubkeyfile, seckeyfile, ident, password);
 		break;
 	case SIGN:
 		if (!msgfile)
