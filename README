@@ -93,9 +93,11 @@ reop doesn’t include a Tempest resistant font for viewing top zecret messages.
 
 code
 
-Should build on OpenBSD with Makefile or elsewhere with GNUMakefile. The
-current code should always build and mostly work, but tagged releases (with
-tarballs) probably work better, or at least are a known quantity.
+Should build on most unix platforms. sh configure; make. Be sure to have
+libsodium installed first.
+
+The current code should always build and mostly work, but tagged releases
+(with tarballs) probably work better, or at least are a known quantity.
 
 Refer to the devnotes.txt file for more information about technical innards.
 

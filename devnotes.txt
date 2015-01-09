@@ -88,12 +88,8 @@ ridiculous.
 
 portability
 
-Should build most where, if you pick the right Makefile. Uses libsodium.
+The primary development platform is OpenBSD, but only a few necessary features
+come from there and they're readily included in the other directory.
 
-Sorting out other/other.c and not building everything everywhere would
-certainly be big help. libbsd maybe? Unfortunately my interest in other
-platforms is mostly restricted to not deliberately breaking them too bad and
-doesn't extend to doing much work.
-
-Patches welcome, subject to two rules: 1) no autofucking. 2) no autofucking.
-
+There's a fake configure script which should cook up an almost decent
+Makefile.
