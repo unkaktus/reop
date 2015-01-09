@@ -16,9 +16,6 @@
 
 #include <sys/stat.h>
 
-#include <netinet/in.h>
-#include <resolv.h>
-
 #include <stdint.h>
 #include <fcntl.h>
 #include <string.h>
@@ -29,6 +26,7 @@
 #include <unistd.h>
 #include <readpassphrase.h>
 #include <util.h>
+#include <reopbase64.h>
 
 #include <sodium.h>
 
@@ -412,7 +410,7 @@ parsekeydata(const char *keydataorig, void *key, size_t keylen, char *ident)
 		goto invalid;
 	begin = readident(begin + 1, ident);
 	*end = 0;
-	if (b64_pton(begin, key, keylen) != keylen)
+	if (reopb64_pton(begin, key, keylen) != keylen)
 		errx(1, "invalid b64 encoding");
 
 	xfree(keydata, strlen(keydata));
@@ -557,7 +555,7 @@ findpubkey(const char *ident)
 					break;
 				strlcat(buf, line, sizeof(buf));
 			}
-			if (b64_pton(buf, (void *)&keys[numkeys], pubkeysize) != pubkeysize)
+			if (reopb64_pton(buf, (void *)&keys[numkeys], pubkeysize) != pubkeysize)
 				errx(1, "invalid keyring b64 encoding");
 			if (numkeys++ > 1000000)
 				errx(1, "too many keys");
@@ -638,7 +636,7 @@ encodekey(const char *info, const void *key, size_t keylen, const char *ident)
 	char buf[1024];
 	char b64[1024];
 
-	if (b64_ntop(key, keylen, b64, sizeof(b64)) == -1)
+	if (reopb64_ntop(key, keylen, b64, sizeof(b64)) == -1)
 		errx(1, "b64 encode failed");
 	wraplines(b64, sizeof(b64));
 	snprintf(buf, sizeof(buf), "-----BEGIN REOP %s-----\n"
@@ -788,7 +786,7 @@ writesignedmsg(const char *filename, const struct reop_sig *sig,
 	snprintf(header, sizeof(header), "-----BEGIN REOP SIGNATURE-----\n"
 	    "ident:%s\n", ident);
 	writeall(fd, header, strlen(header), filename);
-	if (b64_ntop((void *)sig, sigsize, b64, sizeof(b64)) == -1)
+	if (reopb64_ntop((void *)sig, sigsize, b64, sizeof(b64)) == -1)
 		errx(1, "b64 encode failed");
 	writeb64data(fd, filename, b64);
 	sodium_memzero(b64, sizeof(b64));
@@ -982,7 +980,7 @@ writeencfile(const char *filename, const void *hdr,
 
 		size_t b64len = (msglen + 2) / 3 * 4 + 1;
 		char *b64data = xmalloc(b64len);
-		if (b64_ntop(msg, msglen, b64data, b64len) == -1)
+		if (reopb64_ntop(msg, msglen, b64data, b64len) == -1)
 			errx(1, "b64 encode failed");
 
 		int fd = xopen(filename, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
@@ -990,7 +988,7 @@ writeencfile(const char *filename, const void *hdr,
 		writeall(fd, header, strlen(header), filename);
 		snprintf(header, sizeof(header), "ident:%s\n", ident);
 		writeall(fd, header, strlen(header), filename);
-		if (b64_ntop(hdr, hdrlen, b64, sizeof(b64)) == -1)
+		if (reopb64_ntop(hdr, hdrlen, b64, sizeof(b64)) == -1)
 			errx(1, "b64 encode failed");
 		writeb64data(fd, filename, b64);
 		sodium_memzero(b64, sizeof(b64));
@@ -1189,7 +1187,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		if (!(end = strstr(begin, begindata)))
 			goto fail;
 		*end = 0;
-		if ((hdrsize = b64_pton(begin, (void *)&hdr, sizeof(hdr))) == -1)
+		if ((hdrsize = reopb64_pton(begin, (void *)&hdr, sizeof(hdr))) == -1)
 			goto fail;
 		begin = end + strlen(begindata);
 		if (!(end = strstr(begin, endmsg)))
@@ -1198,7 +1196,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 
 		msglen = (strlen(begin) + 3) / 4 * 3 + 1;
 		msg = xmalloc(msglen);
-		msglen = b64_pton(begin, msg, msglen);
+		msglen = reopb64_pton(begin, msg, msglen);
 		if (msglen == -1)
 			goto fail;
 		xfree(encdata, encdatalen);
