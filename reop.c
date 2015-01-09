@@ -767,17 +767,22 @@ void
 generate(const char *pubkeyfile, const char *seckeyfile,
     int rounds, const char *ident)
 {
-	if (!pubkeyfile)
-		pubkeyfile = gethomefile("pubkey");
-	if (!seckeyfile)
-		seckeyfile = gethomefile("seckey");
 
 	struct reop_keypair keypair = reop_generate(rounds, ident);
 	struct reop_seckey copy = *keypair.seckey;
 	encryptseckey(&copy);
 
+	if (!seckeyfile)
+		seckeyfile = gethomefile("seckey");
+	if (!seckeyfile)
+		errx(1, "no seckeyfile");
 	writekeyfile(seckeyfile, "SECRET KEY", &copy, seckeysize,
 	    ident, O_EXCL, 0600);
+
+	if (!pubkeyfile)
+		pubkeyfile = gethomefile("pubkey");
+	if (!pubkeyfile)
+		errx(1, "no pubkeyfile");
 	writekeyfile(pubkeyfile, "PUBLIC KEY", keypair.pubkey, pubkeysize,
 	    ident, O_EXCL, 0666);
 
