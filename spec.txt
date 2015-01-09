@@ -1,0 +1,40 @@
+
+An (in)formal specification for reop file formats
+
+Base components:
+Algorithm - algorithm are specified with two byte indentifiers, usually ASCII
+letters related to the algorithm name
+Random ID - An opaque key identifier. 8 random bytes.
+Identity - A string that identifies the user. Stored outside the base64 data.
+
+General format:
+Most files are ASCII, with binary data encoded via base64. File sections are
+separated with line separators.
+
+Keys:
+Every reop key consists of two curve25519 keys. One is used for encryption.
+One is used for signing.
+
+Secret (private) key:
+	uint8_t sigalg[2] - Signature key algorithm (Ed)
+	uint8_t encalg[2] - Encryption key algorithm (CS)
+	uint8_t symalg[2] - Symmetric algorithm. Used to encrypt key itself. (SP)
+	uint8_t kdfalg[2] - KDF to derive encryption key (BK)
+	uint8_t randomid[8] - 8 bytes
+		[Following fields depend (in theory) on algorithms above]
+	uint32_t kfdrounds - big endian
+	uint8_t salt[16] - For KDF
+	uint8_t box[40] - The extra data for key self encryption
+	uint8_t sigkey[64] - The signature key itself
+	uint8_t enckey[32] - The encryption key itself
+
+Secret keys are always encrypted. (No password "unencrypted" keys are
+encrypted with a key of zeros.)
+
+Public key:
+        uint8_t sigalg[2];
+        uint8_t encalg[2];
+        uint8_t randomid[8];
+        uint8_t sigkey[32];
+        uint8_t enckey[32];
+
