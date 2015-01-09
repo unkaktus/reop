@@ -24,6 +24,8 @@ cat orig.txt | env HOME=fakehome ../reop -Eb -s mysec -i gorilla -m - -x - |
 	../reop -D -s yoursec -p mypub -m - -x - > trip.txt
 diff -u orig.txt trip.txt
 
+../reop -S -s yoursec -m orig.txt -x - | env HOME=fakehome ../reop -Vq -x - -m orig.txt
+
 echo apples | ../reop -Eb -m warn.txt
 echo apples | ../reop -D -x warn.txt.enc -m danger.txt
 diff -u warn.txt danger.txt
