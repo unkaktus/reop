@@ -27,12 +27,8 @@
 #include <errno.h>
 #include <err.h>
 #include <unistd.h>
-#ifdef __OpenBSD__
 #include <readpassphrase.h>
 #include <util.h>
-#else
-#include "other.h"
-#endif
 
 #include <sodium.h>
 

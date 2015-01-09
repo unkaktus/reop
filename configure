@@ -1,0 +1,49 @@
+#!/bin/sh
+
+function has {
+	header=/usr/include/$1
+	[ -f $header ] && grep -q $2 $header
+}
+
+function doconfigure {
+	printf 'CPPFLAGS=-I/usr/include -I/usr/local/include -Iother\n'
+	printf 'CFLAGS=-std=c99 -Wall -O2\n'
+	printf 'LDFLAGS=-L/usr/local/lib -lsodium\n'
+
+	printf 'OBJS=reop.o\n'
+	printf 'OBJS+=main.o\n'
+	# always include base64.c. testing for correct versions is too hard
+	printf 'OBJS+=other/base64.o\n'
+	if ! has string.h strlcpy ; then
+		printf 'OBJS+=other/strlcpy.o\n'
+		printf 'CPPFLAGS+=NEED_STRLCPY\n'
+	fi
+	if ! has string.h strlcat ; then
+		printf 'OBJS+=other/strlcat.o\n'
+		printf 'CPPFLAGS+=NEED_STRLCAT\n'
+	fi
+	if ! has readpassphrase.h readpassphrase ; then
+		printf 'OBJS+=other/readpassphrase.o\n'
+	fi
+		
+	if has util.h bcrypt_pbkdf ; then
+		printf 'LDFLAGS+=-lutil\n'
+	else
+		printf 'OBJS+=other/bcrypt_pbkdf.o\n'
+		if ! has blf.h Blowfish_initstate ; then
+			printf 'OBJS+=other/blowfish.o\n'
+		fi
+	fi
+
+	printf '\n'
+	printf '.c.o:\n'
+	printf '\t${CC} ${CFLAGS} ${CPPFLAGS} -o $@ -c $<\n'
+	printf '\n'
+	printf 'reop: ${OBJS}\n'
+	printf '\t${CC} ${OBJS} -o reop ${LDFLAGS}\n'
+	printf '\n'
+	printf 'clean:\n'
+	printf '\trm -f ${OBJS} reop\n'
+}
+
+doconfigure > Makefile
