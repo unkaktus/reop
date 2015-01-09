@@ -278,7 +278,7 @@ readall(const char *filename, uint64_t *msglenp)
 			errx(1, "msg too large in %s", filename);
 		space = sb.st_size + 1;
 	} else {
-		space = 64 * 1024;
+		space = 64 * 1024 - 1;
 	}
 
 	uint8_t *msg = xmalloc(space + 1);
