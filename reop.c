@@ -360,18 +360,17 @@ wraplines(char *str, size_t space)
  * requires that ~/.reop exist.
  */
 static char *
-gethomefile(const char *filename)
+gethomefile(const char *filename, char *buf)
 {
-	static char buf[1024];
 	struct stat sb;
 	const char *home;
 
 	if (!(home = getenv("HOME")))
 		return NULL;
-	snprintf(buf, sizeof(buf), "%s/.reop", home);
+	snprintf(buf, 1024, "%s/.reop", home);
 	if (stat(buf, &sb) == -1 || !S_ISDIR(sb.st_mode))
 		return NULL;
-	snprintf(buf, sizeof(buf), "%s/.reop/%s", home, filename);
+	snprintf(buf, 1024, "%s/.reop/%s", home, filename);
 	return buf;
 }
 
@@ -529,7 +528,8 @@ findpubkey(const char *ident)
 		int maxkeys = 0;
 		
 		done = 1;
-		const char *keyringname = gethomefile("pubkeyring");
+		char namebuf[1024];
+		const char *keyringname = gethomefile("pubkeyring", namebuf);
 		if (!keyringname)
 			return NULL;
 		FILE *fp = fopen(keyringname, "r");
@@ -593,8 +593,9 @@ reop_getpubkey(const char *pubkeyfile, const char *ident)
 		}
 		return NULL;
 	}
+	char namebuf[1024];
 	if (!pubkeyfile)
-		pubkeyfile = gethomefile("pubkey");
+		pubkeyfile = gethomefile("pubkey", namebuf);
 	if (!pubkeyfile) {
 		free(pubkey);
 		return NULL;
@@ -624,8 +625,9 @@ reop_getseckey(const char *seckeyfile, kdf_allowstdin allowstdin)
 	if (!seckey)
 		return NULL;
 
+	char namebuf[1024];
 	if (!seckeyfile)
-		seckeyfile = gethomefile("seckey");
+		seckeyfile = gethomefile("seckey", namebuf);
 	if (!seckeyfile) {
 		free(seckey);
 		return NULL;
@@ -772,15 +774,17 @@ generate(const char *pubkeyfile, const char *seckeyfile,
 	struct reop_seckey copy = *keypair.seckey;
 	encryptseckey(&copy);
 
+	char secnamebuf[1024];
 	if (!seckeyfile)
-		seckeyfile = gethomefile("seckey");
+		seckeyfile = gethomefile("seckey", secnamebuf);
 	if (!seckeyfile)
 		errx(1, "no seckeyfile");
 	writekeyfile(seckeyfile, "SECRET KEY", &copy, seckeysize,
 	    ident, O_EXCL, 0600);
 
+	char pubnamebuf[1024];
 	if (!pubkeyfile)
-		pubkeyfile = gethomefile("pubkey");
+		pubkeyfile = gethomefile("pubkey", pubnamebuf);
 	if (!pubkeyfile)
 		errx(1, "no pubkeyfile");
 	writekeyfile(pubkeyfile, "PUBLIC KEY", keypair.pubkey, pubkeysize,
