@@ -578,7 +578,9 @@ findpubkey(const char *ident)
 const struct reop_pubkey *
 reop_getpubkey(const char *pubkeyfile, const char *ident)
 {
-	struct reop_pubkey *pubkey = xmalloc(sizeof(*pubkey));
+	struct reop_pubkey *pubkey = malloc(sizeof(*pubkey));
+	if (!pubkey)
+		return NULL;
 
 	if (!pubkeyfile && ident) {
 		const struct reop_pubkey *identkey;
@@ -586,7 +588,7 @@ reop_getpubkey(const char *pubkeyfile, const char *ident)
 			*pubkey = *identkey;
 			return pubkey;
 		}
-		errx(1, "unable to find a pubkey for %s", ident);
+		return NULL;
 	}
 	if (!pubkeyfile)
 		pubkeyfile = gethomefile("pubkey");
@@ -610,10 +612,12 @@ reop_freepubkey(const struct reop_pubkey *pubkey)
 const struct reop_seckey *
 reop_getseckey(const char *seckeyfile, kdf_allowstdin allowstdin)
 {
+	struct reop_seckey *seckey = malloc(sizeof(*seckey));
+	if (!seckey)
+		return NULL;
+
 	if (!seckeyfile)
 		seckeyfile = gethomefile("seckey");
-
-	struct reop_seckey *seckey = xmalloc(sizeof(*seckey));
 
 	readkeyfile(seckeyfile, seckey, seckeysize, seckey->ident);
 	decryptseckey(seckey, allowstdin);
@@ -868,6 +872,8 @@ signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
 
 	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 	const struct reop_seckey *seckey = reop_getseckey(seckeyfile, allowstdin);
+	if (!seckey)
+		errx(1, "no seckey");
 
 	const struct reop_sig *sig = reop_sign(seckey, msg, msglen);
 
@@ -907,6 +913,8 @@ verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
 
 	const struct reop_sig *sig = readsigfile(sigfile);
 	const struct reop_pubkey *pubkey = reop_getpubkey(pubkeyfile, sig->ident);
+	if (!pubkey)
+		errx(1, "no pubkey");
 
 	reop_verify(pubkey, msg, msglen, sig);
 	if (!quiet)
@@ -941,6 +949,8 @@ verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet)
 
 	const struct reop_sig *sig = reop_parsesig(sigdata);
 	const struct reop_pubkey *pubkey = reop_getpubkey(pubkeyfile, sig->ident);
+	if (!pubkey)
+		errx(1, "no pubkey");
 
 	reop_verify(pubkey, (uint8_t*)msg, msglen, sig);
 	if (!quiet)
@@ -1021,8 +1031,12 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	uint8_t *msg = readall(msgfile, &msglen);
 
 	const struct reop_pubkey *pubkey = reop_getpubkey(pubkeyfile, ident);
+	if (!pubkey)
+		errx(1, "no pubkey");
 	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 	const struct reop_seckey *seckey = reop_getseckey(seckeyfile, allowstdin);
+	if (!seckey)
+		errx(1, "no seckey");
 
 	if (memcmp(pubkey->encalg, ENCKEYALG, 2) != 0)
 		errx(1, "unsupported key format");
@@ -1056,8 +1070,12 @@ v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	struct oldencmsg oldencmsg;
 
 	const struct reop_pubkey *pubkey = reop_getpubkey(pubkeyfile, ident);
+	if (!pubkey)
+		errx(1, "no pubkey");
 	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 	const struct reop_seckey *seckey = reop_getseckey(seckeyfile, allowstdin);
+	if (!seckey)
+		errx(1, "no seckey");
 
 	uint64_t msglen;
 	uint8_t *msg = readall(msgfile, &msglen);
@@ -1221,7 +1239,11 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		if (hdrsize != sizeof(hdr.encmsg))
 			goto fail;
 		const struct reop_pubkey *pubkey = reop_getpubkey(pubkeyfile, ident);
+		if (!pubkey)
+			errx(1, "no pubkey");
 		const struct reop_seckey *seckey = reop_getseckey(seckeyfile, allowstdin);
+		if (!seckey)
+			errx(1, "no seckey");
 		if (memcmp(hdr.encmsg.pubrandomid, seckey->randomid, RANDOMIDLEN) != 0 ||
 		    memcmp(hdr.encmsg.secrandomid, pubkey->randomid, RANDOMIDLEN) != 0)
 			goto fpfail;
@@ -1238,7 +1260,11 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		if (hdrsize != sizeof(hdr.oldencmsg))
 			goto fail;
 		const struct reop_pubkey *pubkey = reop_getpubkey(pubkeyfile, ident);
+		if (!pubkey)
+			errx(1, "no pubkey");
 		const struct reop_seckey *seckey = reop_getseckey(seckeyfile, allowstdin);
+		if (!seckey)
+			errx(1, "no seckey");
 		/* pub/sec pairs work both ways */
 		if (memcmp(hdr.oldencmsg.pubrandomid, pubkey->randomid, RANDOMIDLEN) == 0) {
 			if (memcmp(hdr.oldencmsg.secrandomid, seckey->randomid, RANDOMIDLEN) != 0)
@@ -1258,6 +1284,8 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		if (hdrsize != sizeof(hdr.oldekcmsg))
 			goto fail;
 		const struct reop_seckey *seckey = reop_getseckey(seckeyfile, allowstdin);
+		if (!seckey)
+			errx(1, "no seckey");
 		if (memcmp(hdr.oldekcmsg.pubrandomid, seckey->randomid, RANDOMIDLEN) != 0)
 			goto fpfail;
 
