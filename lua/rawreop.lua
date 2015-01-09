@@ -57,6 +57,8 @@ struct pubkey {
 local seckeysize = 172
 local pubkeysize = 76
 local sigsize = 74
+local saltsize = 16
+local symkeysize = 32
 local randomidlen = 8
 local SIGALG = "Ed"
 local ENCKEYALG = "CS"
@@ -68,10 +70,9 @@ local function generate(ident)
 	local seckey = ffi.new("struct seckey")
 	local randomid = ffi.new("uint8_t[?]", randomidlen)
 
-	sodium.crypto_sign_ed25519_keypair(pubkey.sigkey, seckey.sigkey);
-	sodium.crypto_box_keypair(pubkey.enckey, seckey.enckey);
+	sodium.sign_keypair(pubkey.sigkey, seckey.sigkey);
+	sodium.box_keypair(pubkey.enckey, seckey.enckey);
 	sodium.randombytes(randomid, randomidlen)
-
 
 	ffi.copy(seckey.randomid, randomid, randomidlen)
 	ffi.copy(seckey.sigalg, SIGALG, 2);
@@ -79,15 +80,22 @@ local function generate(ident)
 	ffi.copy(seckey.symalg, SYMALG, 2);
 	ffi.copy(seckey.kdfalg, KDFALG, 2);
 
-
 	ffi.copy(pubkey.randomid, randomid, randomidlen)
 	ffi.copy(pubkey.sigalg, SIGALG, 2);
 	ffi.copy(pubkey.encalg, ENCKEYALG, 2);
 
-
 	return { key = pubkey, ident = ident },
 		{ key = seckey, ident = ident }
 end
+
+local function encryptseckey(sec)
+	local symkey = ffi.new("uint8_t[?]", symkeysize)
+	sodium.randombytes(sec.key.salt, saltsize)
+
+	-- no kdf. symkey of zero bytes only
+	sodium.symencrypt(sec.key.sigkey, 96, sec.key.box, symkey)
+end
+
 
 local raw = {
 	seckeysize = seckeysize,
@@ -95,6 +103,7 @@ local raw = {
 	sigsize = sigsize,
 
 	generate = generate,
+	encryptseckey = encryptseckey,
 }
 
 return raw
