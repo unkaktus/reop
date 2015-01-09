@@ -905,9 +905,8 @@ verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
 	uint64_t msglen;
 	uint8_t *msg = readall(msgfile, &msglen);
 
-	char ident[IDENTLEN];
 	const struct reop_sig *sig = readsigfile(sigfile);
-	const struct reop_pubkey *pubkey = reop_getpubkey(pubkeyfile, ident);
+	const struct reop_pubkey *pubkey = reop_getpubkey(pubkeyfile, sig->ident);
 
 	reop_verify(pubkey, msg, msglen, sig);
 	if (!quiet)
