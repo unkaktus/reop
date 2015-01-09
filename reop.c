@@ -367,10 +367,10 @@ gethomefile(const char *filename)
 	const char *home;
 
 	if (!(home = getenv("HOME")))
-		errx(1, "can't find HOME");
+		return NULL;
 	snprintf(buf, sizeof(buf), "%s/.reop", home);
 	if (stat(buf, &sb) == -1 || !S_ISDIR(sb.st_mode))
-		errx(1, "Can't use default files without ~/.reop");
+		return NULL;
 	snprintf(buf, sizeof(buf), "%s/.reop/%s", home, filename);
 	return buf;
 }
@@ -529,7 +529,10 @@ findpubkey(const char *ident)
 		int maxkeys = 0;
 		
 		done = 1;
-		FILE *fp = fopen(gethomefile("pubkeyring"), "r");
+		const char *keyringname = gethomefile("pubkeyring");
+		if (!keyringname)
+			return NULL;
+		FILE *fp = fopen(keyringname, "r");
 		if (!fp)
 			return NULL;
 
@@ -592,6 +595,11 @@ reop_getpubkey(const char *pubkeyfile, const char *ident)
 	}
 	if (!pubkeyfile)
 		pubkeyfile = gethomefile("pubkey");
+	if (!pubkeyfile) {
+		free(pubkey);
+		return NULL;
+	}
+
 	readkeyfile(pubkeyfile, pubkey, pubkeysize, pubkey->ident);
 	return pubkey;
 }
@@ -618,6 +626,10 @@ reop_getseckey(const char *seckeyfile, kdf_allowstdin allowstdin)
 
 	if (!seckeyfile)
 		seckeyfile = gethomefile("seckey");
+	if (!seckeyfile) {
+		free(seckey);
+		return NULL;
+	}
 
 	readkeyfile(seckeyfile, seckey, seckeysize, seckey->ident);
 	decryptseckey(seckey, allowstdin);
