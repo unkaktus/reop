@@ -114,6 +114,12 @@ FILES
      The pubkeyring file is simply a sequence of public key files,
      concatenated into one, and separated by newlines.
 
+ENVIRONMENT
+     REOP_PASSPHRASE  Normally, when reop requires a password, it will prompt
+		      the user.	 Alternatively, a password can be provided in
+		      the environment which may be useful when executing reop
+		      as part of an automated system.
+
 EXIT STATUS
      The reop utility exits 0 on success, and >0 if an error occurs.  It may
      fail for one of the following reasons:
@@ -149,4 +155,4 @@ EXAMPLES
      Add a new friend's public key to your keyring:
 	   $ cat new-friend.pub >> ~/.reop/pubkeyring
 
-OpenBSD 5.6			January 4, 2015			   OpenBSD 5.6
+OpenBSD 5.6		       January 11, 2015			   OpenBSD 5.6

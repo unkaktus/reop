@@ -447,19 +447,19 @@ readkeyfile(const char *filename, void *key, size_t keylen, char *ident)
  */
 static void
 kdf(uint8_t *salt, size_t saltlen, int rounds, const char *password,
-    kdf_allowstdin allowstdin, kdf_confirm confirm, uint8_t *key, size_t keylen)
+    kdf_confirm confirm, uint8_t *key, size_t keylen)
 {
-
 	if (rounds == 0) {
 		memset(key, 0, keylen);
 		return;
 	}
 
+	if (!password)
+		password = getenv("REOP_PASSPHRASE");
+
 	char passbuf[1024];
 	if (!password) {
 		int rppflags = RPP_ECHO_OFF;
-		if (allowstdin.v && !isatty(STDIN_FILENO))
-			rppflags |= RPP_STDIN;
 		if (!readpassphrase("passphrase: ", passbuf, sizeof(passbuf), rppflags))
 			errx(1, "unable to read passphrase");
 		if (strlen(passbuf) == 0)
@@ -491,7 +491,6 @@ void
 encryptseckey(struct reop_seckey *seckey, const char *password)
 {
 	uint8_t symkey[SYMKEYBYTES];
-	kdf_allowstdin allowstdin = { 1 };
 	kdf_confirm confirm = { 1 };
 
 	int rounds = 42;
@@ -502,7 +501,7 @@ encryptseckey(struct reop_seckey *seckey, const char *password)
 	seckey->kdfrounds = htonl(rounds);
 
 	kdf(seckey->salt, sizeof(seckey->salt), rounds, password,
-	    allowstdin, confirm, symkey, sizeof(symkey));
+	    confirm, symkey, sizeof(symkey));
 	symencryptraw(seckey->sigkey, sizeof(seckey->sigkey) + sizeof(seckey->enckey),
 	    seckey->nonce, seckey->tag, symkey);
 	sodium_memzero(symkey, sizeof(symkey));
@@ -515,13 +514,12 @@ decryptseckey(struct reop_seckey *seckey, const char *password)
 		errx(1, "unsupported KDF");
 
 	uint8_t symkey[SYMKEYBYTES];
-	kdf_allowstdin allowstdin = { 0 };
 	kdf_confirm confirm = { 0 };
 
 	int rounds = ntohl(seckey->kdfrounds);
 
 	kdf(seckey->salt, sizeof(seckey->salt), rounds, password,
-	    allowstdin, confirm, symkey, sizeof(symkey));
+	    confirm, symkey, sizeof(symkey));
 	symdecryptraw(seckey->sigkey, sizeof(seckey->sigkey) + sizeof(seckey->enckey),
 	    seckey->nonce, seckey->tag, symkey);
 	sodium_memzero(symkey, sizeof(symkey));
@@ -1139,7 +1137,6 @@ symencrypt(const char *msgfile, const char *encfile, opt_binary binary)
 {
 	struct symmsg symmsg;
 	uint8_t symkey[SYMKEYBYTES];
-	kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 	kdf_confirm confirm = { 1 };
 
 	uint64_t msglen;
@@ -1152,7 +1149,7 @@ symencrypt(const char *msgfile, const char *encfile, opt_binary binary)
 	symmsg.kdfrounds = htonl(rounds);
 	randombytes(symmsg.salt, sizeof(symmsg.salt));
 	kdf(symmsg.salt, sizeof(symmsg.salt), rounds, NULL,
-	    allowstdin, confirm, symkey, sizeof(symkey));
+	    confirm, symkey, sizeof(symkey));
 
 	symencryptraw(msg, msglen, symmsg.nonce, symmsg.tag, symkey);
 	sodium_memzero(symkey, sizeof(symkey));
@@ -1260,14 +1257,13 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 
 	if (memcmp(hdr.alg, SYMALG, 2) == 0) {
 		kdf_confirm confirm = { 0 };
-		kdf_allowstdin allowstdin = { strcmp(msgfile, "-") != 0 };
 		if (hdrsize != sizeof(hdr.symmsg))
  			goto fail;
 		if (memcmp(hdr.symmsg.kdfalg, KDFALG, 2) != 0)
 			errx(1, "unsupported KDF");
 		int rounds = ntohl(hdr.symmsg.kdfrounds);
 		kdf(hdr.symmsg.salt, sizeof(hdr.symmsg.salt), rounds, NULL,
-		    allowstdin, confirm, symkey, sizeof(symkey));
+		    confirm, symkey, sizeof(symkey));
 		symdecryptraw(msg, msglen, hdr.symmsg.nonce, hdr.symmsg.tag, symkey);
 		sodium_memzero(symkey, sizeof(symkey));
 	} else if (memcmp(hdr.alg, ENCALG, 2) == 0) {

@@ -26,13 +26,13 @@ diff -u orig.txt trip.txt
 
 ../reop -S -s yoursec -m orig.txt -x - | env HOME=fakehome ../reop -Vq -x - -m orig.txt
 
-echo apples | ../reop -Eb -m warn.txt
-echo apples | ../reop -D -x warn.txt.enc -m danger.txt
+env REOP_PASSPHRASE=apples ../reop -Eb -m warn.txt
+env REOP_PASSPHRASE=apples ../reop -D -x warn.txt.enc -m danger.txt
 diff -u warn.txt danger.txt
 
-echo bananas | ../reop -E -m warn.txt
+env REOP_PASSPHRASE=bananas ../reop -E -m warn.txt
 ../reop -Se -s mysec -m warn.txt
-echo bananas | ../reop -D -x warn.txt.enc -m danger.txt
+env REOP_PASSPHRASE=bananas ../reop -D -x warn.txt.enc -m danger.txt
 diff -u warn.txt danger.txt
 ../reop -Vq -p mypub -x warn.txt.sig
 ../reop -Vq -p yourpub -x warn.txt.sig 2> error.log || true
@@ -53,7 +53,7 @@ if [ -x ../go/reop ] ; then
 	../go/reop mysec yourpub warn.txt | ../reop -D -s yoursec -p mypub -x - -m - > danger.txt
 	diff -u danger.txt warn.txt
 	../go/reop gorilla  warn.txt > warn.txt.enc
-	echo gorilla | ../reop -D -x warn.txt.enc -m danger.txt
+	env REOP_PASSPHRASE=gorilla ../reop -D -x warn.txt.enc -m danger.txt
 	diff -u danger.txt warn.txt
 	echo Go passed.
 else
