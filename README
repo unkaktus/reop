@@ -101,3 +101,16 @@ The current code should always build and mostly work, but tagged releases
 
 Refer to the devnotes.txt file for more information about technical innards.
 
+history (notable versions and changes)
+
+1.0
+Initial release
+
+1.1.1
+Binary encrypted messages (-b option)
+
+2.1
+More secure encrypted message format (default)
+
+3.0 (unreleased)
+Passwords can be passed in REOP_PASSPHRASE. Remove passwords on stdin support.
