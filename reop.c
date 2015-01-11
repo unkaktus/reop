@@ -44,13 +44,13 @@
 #define ENCNONCEBYTES crypto_box_curve25519xsalsa20poly1305_NONCEBYTES
 #define ENCZEROBYTES crypto_box_curve25519xsalsa20poly1305_ZEROBYTES
 #define ENCBOXZEROBYTES crypto_box_curve25519xsalsa20poly1305_BOXZEROBYTES
-#define ENCBOXBYTES crypto_box_curve25519xsalsa20poly1305_MACBYTES
+#define ENCTAGBYTES crypto_box_curve25519xsalsa20poly1305_MACBYTES
 
 #define SYMKEYBYTES crypto_secretbox_xsalsa20poly1305_KEYBYTES
 #define SYMNONCEBYTES crypto_secretbox_xsalsa20poly1305_NONCEBYTES
 #define SYMZEROBYTES crypto_secretbox_xsalsa20poly1305_ZEROBYTES
 #define SYMBOXZEROBYTES crypto_secretbox_xsalsa20poly1305_BOXZEROBYTES
-#define SYMBOXBYTES crypto_secretbox_xsalsa20poly1305_MACBYTES
+#define SYMTAGBYTES crypto_secretbox_xsalsa20poly1305_MACBYTES
 
 /* magic */
 #define SIGALG "Ed"	/* Ed25519 */
@@ -70,7 +70,8 @@ struct symmsg {
 	uint8_t kdfalg[2];
 	uint32_t kdfrounds;
 	uint8_t salt[16];
-	uint8_t box[SYMNONCEBYTES + SYMBOXBYTES];
+	uint8_t nonce[SYMNONCEBYTES];
+	uint8_t tag[SYMTAGBYTES];
 };
 
 struct encmsg {
@@ -78,22 +79,26 @@ struct encmsg {
 	uint8_t secrandomid[RANDOMIDLEN];
 	uint8_t pubrandomid[RANDOMIDLEN];
 	uint8_t ephpubkey[ENCPUBLICBYTES];
-	uint8_t ephbox[ENCNONCEBYTES + ENCBOXBYTES];
-	uint8_t box[ENCNONCEBYTES + ENCBOXBYTES];
+	uint8_t ephnonce[ENCNONCEBYTES];
+	uint8_t ephtag[ENCTAGBYTES];
+	uint8_t nonce[ENCNONCEBYTES];
+	uint8_t tag[ENCTAGBYTES];
 };
 
 struct oldencmsg {
 	uint8_t encalg[2];
 	uint8_t secrandomid[RANDOMIDLEN];
 	uint8_t pubrandomid[RANDOMIDLEN];
-	uint8_t box[ENCNONCEBYTES + ENCBOXBYTES];
+	uint8_t nonce[ENCNONCEBYTES];
+	uint8_t tag[ENCTAGBYTES];
 };
 
 struct oldekcmsg {
 	uint8_t ekcalg[2];
 	uint8_t pubrandomid[RANDOMIDLEN];
 	uint8_t pubkey[ENCPUBLICBYTES];
-	uint8_t box[ENCNONCEBYTES + ENCBOXBYTES];
+	uint8_t nonce[ENCNONCEBYTES];
+	uint8_t tag[ENCTAGBYTES];
 };
 
 struct reop_seckey {
@@ -104,7 +109,8 @@ struct reop_seckey {
 	uint8_t randomid[RANDOMIDLEN];
 	uint32_t kdfrounds;
 	uint8_t salt[16];
-	uint8_t box[SYMNONCEBYTES + SYMBOXBYTES];
+	uint8_t nonce[SYMNONCEBYTES];
+	uint8_t tag[SYMTAGBYTES];
 	uint8_t sigkey[SIGSECRETBYTES];
 	uint8_t enckey[ENCSECRETBYTES];
 	char ident[IDENTLEN];
@@ -195,10 +201,10 @@ reop_freestr(const char *str)
  * box will be used to hold the additional auth tag data.
  */
 static void
-symencryptraw(uint8_t *buf, uint64_t buflen, uint8_t *box, const uint8_t *symkey)
+symencryptraw(uint8_t *buf, uint64_t buflen, uint8_t *nonce, uint8_t *tag, const uint8_t *symkey)
 {
-	randombytes(box, SYMNONCEBYTES);
-	crypto_secretbox_detached(buf, box + SYMNONCEBYTES, buf, buflen, box, symkey);
+	randombytes(nonce, SYMNONCEBYTES);
+	crypto_secretbox_detached(buf, tag, buf, buflen, nonce, symkey);
 }
 
 /*
@@ -207,11 +213,11 @@ symencryptraw(uint8_t *buf, uint64_t buflen, uint8_t *box, const uint8_t *symkey
  * box contains the auth tag data.
  */
 static void
-symdecryptraw(uint8_t *buf, uint64_t buflen, const uint8_t *box,
+symdecryptraw(uint8_t *buf, uint64_t buflen, const uint8_t *nonce, uint8_t *tag,
     const uint8_t *symkey)
 {
-	if (crypto_secretbox_open_detached(buf, buf, box + SYMNONCEBYTES,
-	    buflen, box, symkey) == -1)
+	if (crypto_secretbox_open_detached(buf, buf, tag,
+	    buflen, nonce, symkey) == -1)
 		errx(1, "sym decryption failed");
 }
 
@@ -221,12 +227,11 @@ symdecryptraw(uint8_t *buf, uint64_t buflen, const uint8_t *box,
  * box will be used to hold randomly generated nonce and auth tag data.
  */
 static void
-pubencryptraw(uint8_t *buf, uint64_t buflen, uint8_t *box,
+pubencryptraw(uint8_t *buf, uint64_t buflen, uint8_t *nonce, uint8_t *tag,
     const uint8_t *pubkey, const uint8_t *seckey)
 {
-	randombytes(box, ENCNONCEBYTES);
-	crypto_box_detached(buf, box + ENCNONCEBYTES, buf, buflen, box,
-	    pubkey, seckey);
+	randombytes(nonce, ENCNONCEBYTES);
+	crypto_box_detached(buf, tag, buf, buflen, nonce, pubkey, seckey);
 }
 
 /*
@@ -235,11 +240,11 @@ pubencryptraw(uint8_t *buf, uint64_t buflen, uint8_t *box,
  * box contains nonce and auth tag data.
  */
 static void
-pubdecryptraw(uint8_t *buf, uint64_t buflen, uint8_t *box,
+pubdecryptraw(uint8_t *buf, uint64_t buflen, uint8_t *nonce, uint8_t *tag,
     const uint8_t *pubkey, const uint8_t *seckey)
 {
-	if (crypto_box_open_detached(buf, buf, box + ENCNONCEBYTES,
-	    buflen, box, pubkey, seckey) == -1)
+	if (crypto_box_open_detached(buf, buf, tag,
+	    buflen, nonce, pubkey, seckey) == -1)
 		errx(1, "pub decryption failed");
 }
 
@@ -498,7 +503,7 @@ encryptseckey(struct reop_seckey *seckey, const char *password)
 	kdf(seckey->salt, sizeof(seckey->salt), rounds, password,
 	    allowstdin, confirm, symkey, sizeof(symkey));
 	symencryptraw(seckey->sigkey, sizeof(seckey->sigkey) + sizeof(seckey->enckey),
-	    seckey->box, symkey);
+	    seckey->nonce, seckey->tag, symkey);
 	sodium_memzero(symkey, sizeof(symkey));
 }
 
@@ -517,7 +522,7 @@ decryptseckey(struct reop_seckey *seckey, const char *password)
 	kdf(seckey->salt, sizeof(seckey->salt), rounds, password,
 	    allowstdin, confirm, symkey, sizeof(symkey));
 	symdecryptraw(seckey->sigkey, sizeof(seckey->sigkey) + sizeof(seckey->enckey),
-	    seckey->box, symkey);
+	    seckey->nonce, seckey->tag, symkey);
 	sodium_memzero(symkey, sizeof(symkey));
 }
 
@@ -1074,8 +1079,9 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	memcpy(encmsg.secrandomid, seckey->randomid, RANDOMIDLEN);
 	crypto_box_keypair(encmsg.ephpubkey, ephseckey);
 
-	pubencryptraw(msg, msglen, encmsg.box, pubkey->enckey, ephseckey);
-	pubencryptraw(encmsg.ephpubkey, sizeof(encmsg.ephpubkey), encmsg.ephbox, pubkey->enckey, seckey->enckey);
+	pubencryptraw(msg, msglen, encmsg.nonce, encmsg.tag, pubkey->enckey, ephseckey);
+	pubencryptraw(encmsg.ephpubkey, sizeof(encmsg.ephpubkey), encmsg.ephnonce,
+	    encmsg.ephtag, pubkey->enckey, seckey->enckey);
 
 	writeencfile(encfile, &encmsg, sizeof(encmsg), seckey->ident, msg, msglen, binary);
 
@@ -1113,7 +1119,8 @@ v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	memcpy(oldencmsg.encalg, OLDENCALG, 2);
 	memcpy(oldencmsg.pubrandomid, pubkey->randomid, RANDOMIDLEN);
 	memcpy(oldencmsg.secrandomid, seckey->randomid, RANDOMIDLEN);
-	pubencryptraw(msg, msglen, oldencmsg.box, pubkey->enckey, seckey->enckey);
+	pubencryptraw(msg, msglen, oldencmsg.nonce, oldencmsg.tag, pubkey->enckey,
+	    seckey->enckey);
 
 	writeencfile(encfile, &oldencmsg, sizeof(oldencmsg), seckey->ident, msg, msglen, binary);
 
@@ -1146,7 +1153,7 @@ symencrypt(const char *msgfile, const char *encfile, opt_binary binary)
 	kdf(symmsg.salt, sizeof(symmsg.salt), rounds, NULL,
 	    allowstdin, confirm, symkey, sizeof(symkey));
 
-	symencryptraw(msg, msglen, symmsg.box, symkey);
+	symencryptraw(msg, msglen, symmsg.nonce, symmsg.tag, symkey);
 	sodium_memzero(symkey, sizeof(symkey));
 
 	writeencfile(encfile, &symmsg, sizeof(symmsg), "<symmetric>", msg, msglen, binary);
@@ -1260,7 +1267,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		int rounds = ntohl(hdr.symmsg.kdfrounds);
 		kdf(hdr.symmsg.salt, sizeof(hdr.symmsg.salt), rounds, NULL,
 		    allowstdin, confirm, symkey, sizeof(symkey));
-		symdecryptraw(msg, msglen, hdr.symmsg.box, symkey);
+		symdecryptraw(msg, msglen, hdr.symmsg.nonce, hdr.symmsg.tag, symkey);
 		sodium_memzero(symkey, sizeof(symkey));
 	} else if (memcmp(hdr.alg, ENCALG, 2) == 0) {
 		if (hdrsize != sizeof(hdr.encmsg))
@@ -1279,8 +1286,10 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 			errx(1, "unsupported key format");
 		if (memcmp(seckey->encalg, ENCKEYALG, 2) != 0)
 			errx(1, "unsupported key format");
-		pubdecryptraw(hdr.encmsg.ephpubkey, sizeof(hdr.encmsg.ephpubkey), hdr.encmsg.ephbox, pubkey->enckey, seckey->enckey);
-		pubdecryptraw(msg, msglen, hdr.encmsg.box, hdr.encmsg.ephpubkey, seckey->enckey);
+		pubdecryptraw(hdr.encmsg.ephpubkey, sizeof(hdr.encmsg.ephpubkey),
+		    hdr.encmsg.ephnonce, hdr.encmsg.ephtag, pubkey->enckey, seckey->enckey);
+		pubdecryptraw(msg, msglen, hdr.encmsg.nonce, hdr.encmsg.tag,
+		    hdr.encmsg.ephpubkey, seckey->enckey);
 		reop_freeseckey(seckey);
 		reop_freepubkey(pubkey);
 	} else if (memcmp(hdr.alg, OLDENCALG, 2) == 0) {
@@ -1304,7 +1313,8 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 			errx(1, "unsupported key format");
 		if (memcmp(seckey->encalg, ENCKEYALG, 2) != 0)
 			errx(1, "unsupported key format");
-		pubdecryptraw(msg, msglen, hdr.oldencmsg.box, pubkey->enckey, seckey->enckey);
+		pubdecryptraw(msg, msglen, hdr.oldencmsg.nonce, hdr.oldencmsg.tag,
+		    pubkey->enckey, seckey->enckey);
 		reop_freeseckey(seckey);
 		reop_freepubkey(pubkey);
 	} else if (memcmp(hdr.alg, OLDEKCALG, 2) == 0) {
@@ -1316,7 +1326,8 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		if (memcmp(hdr.oldekcmsg.pubrandomid, seckey->randomid, RANDOMIDLEN) != 0)
 			goto fpfail;
 
-		pubdecryptraw(msg, msglen, hdr.oldekcmsg.box, hdr.oldekcmsg.pubkey, seckey->enckey);
+		pubdecryptraw(msg, msglen, hdr.oldekcmsg.nonce, hdr.oldekcmsg.tag,
+		    hdr.oldekcmsg.pubkey, seckey->enckey);
 		reop_freeseckey(seckey);
 	} else {
 		goto fail;
