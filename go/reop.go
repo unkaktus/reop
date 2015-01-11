@@ -1,11 +1,11 @@
 package main
 
 import (
-	// "bufio"
+	"github.com/dchest/bcrypt_pbkdf"
 	"bytes"
-	"crypto/rand"
 	"golang.org/x/crypto/nacl/box"
 	"golang.org/x/crypto/nacl/secretbox"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
 	"fmt"
@@ -50,6 +50,15 @@ type Encmsg struct {
 	tag [16]byte
 }
 
+type Symmsg struct {
+	symalg [2]byte
+	kdfalg [2]byte
+	kdfrounds uint32
+	salt [16]byte
+	nonce [24]byte
+	tag [16]byte
+}
+
 func wraplines(s string) string {
 	for i := 76; i < len(s); i += 77 {
 		s = s[0:i] + "\n" + s[i:]
@@ -68,6 +77,7 @@ func encodeSeckey(seckey *Seckey) string {
 	buf.Write(seckey.salt[:])
 	buf.Write(seckey.nonce[:])
 	buf.Write(seckey.tag[:])
+	// XXX need encrypt
 	buf.Write(seckey.sigkey[:])
 	buf.Write(seckey.enckey[:])
 	str := base64.StdEncoding.EncodeToString(buf.Bytes())
@@ -97,6 +107,7 @@ func decodeSeckey(seckeydata string) *Seckey {
 	buf.Read(seckey.tag[:])
 	buf.Read(seckey.sigkey[:])
 	buf.Read(seckey.enckey[:])
+	// XXX use a real key
 	var symkey [32]byte
 	var enc [16 + 64 + 32]byte
 	copy(enc[0:16], seckey.tag[:])
@@ -189,17 +200,67 @@ func encryptMsg(seckey *Seckey, pubkey *Pubkey, msg []byte) string {
 		"-----END REOP ENCRYPTED MESSAGE-----\n"
 }
 
+func encryptSymmsg(password string, msg []byte) string {
+	symmsg := new(Symmsg)
+	rounds := 42
+
+	copy(symmsg.symalg[:], "SP")
+	copy(symmsg.kdfalg[:], "BK")
+	symmsg.kdfrounds = uint32(rounds)
+	rand.Read(symmsg.salt[:])
+	rand.Read(symmsg.nonce[:])
+
+	key, _ := bcrypt_pbkdf.Key([]byte(password), symmsg.salt[:], rounds, 32)
+	var symkey [32]byte
+	copy(symkey[:], key)
+
+	enc := secretbox.Seal(nil, msg, &symmsg.nonce, &symkey)
+	copy(symmsg.tag[:], enc[0:16])
+	enc = enc[16:]
+
+	var buf bytes.Buffer
+	buf.Write(symmsg.symalg[:])
+	buf.Write(symmsg.kdfalg[:])
+	binary.Write(&buf, binary.BigEndian, symmsg.kdfrounds)
+	buf.Write(symmsg.salt[:])
+	buf.Write(symmsg.nonce[:])
+	buf.Write(symmsg.tag[:])
+
+	hdr := base64.StdEncoding.EncodeToString(buf.Bytes())
+	hdr = wraplines(hdr)
+
+	str := base64.StdEncoding.EncodeToString(enc)
+	str = wraplines(str)
+
+	return "-----BEGIN REOP ENCRYPTED MESSAGE-----\n" +
+		"ident:<symmetric>\n" +
+		hdr + "\n" +
+		"-----BEGIN REOP ENCRYPTED MESSAGE DATA-----\n" +
+		str + "\n" +
+		"-----END REOP ENCRYPTED MESSAGE-----\n"
+}
+
 func main() {
-	seckey := readSeckey(os.Args[1])
-	pubkey := readPubkey(os.Args[2])
+	if len(os.Args) == 4 {
+		seckey := readSeckey(os.Args[1])
+		pubkey := readPubkey(os.Args[2])
 
-	msg, err := ioutil.ReadFile(os.Args[3])
-	if err != nil {
-		log.Fatal(err)
+		msg, err := ioutil.ReadFile(os.Args[3])
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		s := encryptMsg(seckey, pubkey, msg)
+		fmt.Println(s)
+	} else if len(os.Args) == 3 {
+		password := os.Args[1]
+		msg, err := ioutil.ReadFile(os.Args[2])
+		if err != nil {
+			log.Fatal(err)
+		}
+		s := encryptSymmsg(password, msg)
+		fmt.Println(s)
 	}
-
-	s := encryptMsg(seckey, pubkey, msg)
-	fmt.Println(s)
 }
 
 
