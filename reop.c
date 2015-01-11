@@ -193,12 +193,16 @@ reop_freestr(const char *str)
  * generally how the nacl included c++ wrappers do things. the message data
  * is operated on separately from any required padding or nonce bytes.
  * wasteful, but convenient.
+ * libsodium has actually solved most of these problems for us, but the above
+ * comment remains to explain why we're not using the pure nacl interface.
+ * the wrapper functions remain to enable us to go back to pure nacl (or any
+ * other library) if that's ever desired. i'm trying not to wed the code to
+ * any particular implementation.
  */
 
 /*
  * wrapper around crypto_secretbox.
  * operates on buf "in place".
- * box will be used to hold the additional auth tag data.
  */
 static void
 symencryptraw(uint8_t *buf, uint64_t buflen, uint8_t *nonce, uint8_t *tag, const uint8_t *symkey)
@@ -210,7 +214,6 @@ symencryptraw(uint8_t *buf, uint64_t buflen, uint8_t *nonce, uint8_t *tag, const
 /*
  * wrapper around crypto_secretbox_open.
  * operates on buf "in place".
- * box contains the auth tag data.
  */
 static void
 symdecryptraw(uint8_t *buf, uint64_t buflen, const uint8_t *nonce, uint8_t *tag,
@@ -224,7 +227,6 @@ symdecryptraw(uint8_t *buf, uint64_t buflen, const uint8_t *nonce, uint8_t *tag,
 /*
  * wrapper around crypto_box.
  * operates on buf "in place".
- * box will be used to hold randomly generated nonce and auth tag data.
  */
 static void
 pubencryptraw(uint8_t *buf, uint64_t buflen, uint8_t *nonce, uint8_t *tag,
@@ -237,7 +239,6 @@ pubencryptraw(uint8_t *buf, uint64_t buflen, uint8_t *nonce, uint8_t *tag,
 /*
  * wrapper around crypto_box_open.
  * operates on buf "in place".
- * box contains nonce and auth tag data.
  */
 static void
 pubdecryptraw(uint8_t *buf, uint64_t buflen, uint8_t *nonce, uint8_t *tag,
