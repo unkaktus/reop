@@ -24,13 +24,13 @@ Secret (private) key:
 		[Following fields depend (in theory) on algorithms above]
 	uint32_t kfdrounds - big endian
 	uint8_t salt[16] - For KDF
-	uint8_t box[40] - The extra data for key self encryption
+	uint8_t nonce[24] - The extra data for key self encryption
+	uint8_t tag[16] - Tag to authenticate key self encryption
 	uint8_t sigkey[64] - The signature key itself
 	uint8_t enckey[32] - The encryption key itself
 
 Secret keys are always encrypted. (No password "unencrypted" keys, specified
-by setting kdfrounds to 0, are encrypted with a key of zeros.) The box
-consists of a 24 byte random nonce and a 16 byte tag.
+by setting kdfrounds to 0, are encrypted with a key of zeros.)
 
 Public key:
         uint8_t sigalg[2];
@@ -65,4 +65,47 @@ The reop application supports specifying keys on the command line in addition
 to reading them from a default ~/.repo location. Most key files consist of a
 single key. The exception is a keyring file. Multiple public keys (in base64
 format) may be concatenated into one file.
+
+Messages:
+There several message types. Encrypted messages and signed messages.
+Encrypted messages may further be broken down into asymmetric and symmetric.
+
+Asymmetric Encrypted Messages:
+	uint8_t encalg[2]	eC
+	uint8_t secrandomid[8]
+	uint8_t pubrandomid[8]
+	uint8_t ephpubkey[32]
+	uint8_t ephnonce[24]
+	uint8_t ephtag[16]
+	uint8_t nonce[24]
+	uint8_t tag[16]
+
+Encrypted messages consist of two sections. A header and the data, both
+base64 encoded and wrapped in ASCII guard lines. The ident line identifies
+the sender, so that the recipient may select the correct key to authenticate
+the message.
+
+An ephemeral key is used to encrypt the message. The ephemeral key is then
+itself encrypted with the long term key. This ensures that the sender will
+be unable to decrypt the message after sending; only the recipient can open
+it now.
+
+Procedure:
+	# generate the ephemeral key pair
+	ephpub, ephsec = new enc key pair
+	# encrypt the message with ephemeral key
+	randombytes(encmsg.nonce)
+	encdata, encmsg.tag = encrypt(msg, encmsg.nonce, pubkey.enckey, ephsec)
+	# encrypt the ephemeral key with long term key
+	randombytes(encmsg.ephnonce)
+	encmsg.ephpub, encmsg.ephtag = encrypt(ephpub, encmsg.ephnonce,
+		pubkey.enckey, seckey.enckey)
+
+
+-----BEGIN REOP ENCRYPTED MESSAGE-----
+ident:sender
+base64 header info
+-----BEGIN REOP ENCRYPTED MESSAGE DATA-----
+base64 message data
+-----END REOP ENCRYPTED MESSAGE-----
 
