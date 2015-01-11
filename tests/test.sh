@@ -49,6 +49,17 @@ else
 	echo Skipping lua tests.
 fi
 
+if [ -x ../go/reop ] ; then
+	../go/reop mysec yourpub warn.txt | ../reop -D -s yoursec -p mypub -x - -m - > danger.txt
+	diff -u danger.txt warn.txt
+	../go/reop gorilla  warn.txt > warn.txt.enc
+	echo gorilla | ../reop -D -x warn.txt.enc -m danger.txt
+	diff -u danger.txt warn.txt
+	echo Go passed.
+else
+	echo Skipping Go tests.
+fi
+
 echo All passed.
 
 clean
