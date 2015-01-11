@@ -1,0 +1,206 @@
+package main
+
+import (
+	// "bufio"
+	"bytes"
+	"crypto/rand"
+	"golang.org/x/crypto/nacl/box"
+	"golang.org/x/crypto/nacl/secretbox"
+	"encoding/base64"
+	"encoding/binary"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"os"
+	"strings"
+)
+
+type Seckey struct {
+	sigalg [2]byte
+	encalg [2]byte
+	symalg [2]byte
+	kdfalg [2]byte
+	randomid [8]byte
+	kdfrounds uint32
+	salt [16]byte
+	nonce [24]byte
+	tag [16]byte
+	sigkey [64]byte
+	enckey [32]byte
+	ident string
+}
+
+type Pubkey struct {
+	sigalg [2]byte
+	encalg [2]byte
+	randomid [8]byte
+	sigkey [32]byte
+	enckey [32]byte
+	ident string
+}
+
+type Encmsg struct {
+	encalg [2]byte
+	secrandomid [8]byte
+	pubrandomid [8]byte
+	ephpubkey [32]byte
+	ephnonce [24]byte
+	ephtag [16]byte
+	nonce [24]byte
+	tag [16]byte
+}
+
+func wraplines(s string) string {
+	for i := 76; i < len(s); i += 77 {
+		s = s[0:i] + "\n" + s[i:]
+	}
+	return s
+}
+
+func encodeSeckey(seckey *Seckey) string {
+	var buf bytes.Buffer
+	buf.Write(seckey.sigalg[:])
+	buf.Write(seckey.encalg[:])
+	buf.Write(seckey.symalg[:])
+	buf.Write(seckey.kdfalg[:])
+	buf.Write(seckey.randomid[:])
+	binary.Write(&buf, binary.BigEndian, seckey.kdfrounds)
+	buf.Write(seckey.salt[:])
+	buf.Write(seckey.nonce[:])
+	buf.Write(seckey.tag[:])
+	buf.Write(seckey.sigkey[:])
+	buf.Write(seckey.enckey[:])
+	str := base64.StdEncoding.EncodeToString(buf.Bytes())
+	str = wraplines(str)
+	return "-----BEGIN REOP SECRET KEY-----\n" +
+		"ident:" + seckey.ident + "\n" +
+		str + "\n" +
+		"-----END REOP SECRET KEY-----\n"
+}
+
+func decodeSeckey(seckeydata string) *Seckey {
+	lines := strings.Split(seckeydata, "\n")
+	var ident string
+	fmt.Sscanf(lines[1], "ident:%s", &ident)
+	b64 := strings.Join(lines[2:6], "\n")
+	data, _ := base64.StdEncoding.DecodeString(b64)
+	buf := bytes.NewBuffer(data)
+	seckey := new(Seckey)
+	buf.Read(seckey.sigalg[:])
+	buf.Read(seckey.encalg[:])
+	buf.Read(seckey.symalg[:])
+	buf.Read(seckey.kdfalg[:])
+	buf.Read(seckey.randomid[:])
+	binary.Read(buf, binary.BigEndian, &seckey.kdfrounds)
+	buf.Read(seckey.salt[:])
+	buf.Read(seckey.nonce[:])
+	buf.Read(seckey.tag[:])
+	buf.Read(seckey.sigkey[:])
+	buf.Read(seckey.enckey[:])
+	var symkey [32]byte
+	var enc [16 + 64 + 32]byte
+	copy(enc[0:16], seckey.tag[:])
+	copy(enc[16:80], seckey.sigkey[:])
+	copy(enc[80:112], seckey.enckey[:])
+	dec, ok := secretbox.Open(nil, enc[:], &seckey.nonce, &symkey)
+	if !ok {
+		log.Fatal("decryption failed")
+	}
+	copy(seckey.sigkey[:], dec[0:64])
+	copy(seckey.enckey[:], dec[64:96])
+	seckey.ident = ident
+	return seckey
+}
+
+func decodePubkey(pubkeydata string) *Pubkey {
+	lines := strings.Split(pubkeydata, "\n")
+	var ident string
+	fmt.Sscanf(lines[1], "ident:%s", &ident)
+	b64 := strings.Join(lines[2:4], "\n")
+	data, _ := base64.StdEncoding.DecodeString(b64)
+	buf := bytes.NewBuffer(data)
+	pubkey := new(Pubkey)
+	buf.Read(pubkey.sigalg[:])
+	buf.Read(pubkey.encalg[:])
+	buf.Read(pubkey.randomid[:])
+	buf.Read(pubkey.sigkey[:])
+	buf.Read(pubkey.enckey[:])
+	pubkey.ident = ident
+	return pubkey
+}
+
+func readSeckey(seckeyfile string) *Seckey {
+	seckeydata, err := ioutil.ReadFile(seckeyfile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	seckey := decodeSeckey(string(seckeydata))
+	return seckey
+}
+
+func readPubkey(pubkeyfile string) *Pubkey {
+	pubkeydata, err := ioutil.ReadFile(pubkeyfile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	pubkey := decodePubkey(string(pubkeydata))
+	return pubkey
+}
+
+func encryptMsg(seckey *Seckey, pubkey *Pubkey, msg []byte) string {
+	encmsg := new(Encmsg)
+	encmsg.encalg[0] = 'e'
+	encmsg.encalg[1] = 'C'
+	copy(encmsg.secrandomid[:], seckey.randomid[:])
+	copy(encmsg.pubrandomid[:], pubkey.randomid[:])
+
+	ephpub, ephsec, _ := box.GenerateKey(rand.Reader)
+
+	rand.Read(encmsg.nonce[:])
+	enc := box.Seal(nil, msg, &encmsg.nonce, &pubkey.enckey, ephsec)
+	copy(encmsg.tag[:], enc[0:16])
+	enc = enc[16:]
+
+	rand.Read(encmsg.ephnonce[:])
+	encephpub := box.Seal(nil, ephpub[:], &encmsg.ephnonce, &pubkey.enckey, &seckey.enckey)
+	copy(encmsg.ephtag[:], encephpub[0:16])
+	copy(encmsg.ephpubkey[:], encephpub[16:])
+
+	var buf bytes.Buffer
+	buf.Write(encmsg.encalg[:])
+	buf.Write(encmsg.secrandomid[:])
+	buf.Write(encmsg.pubrandomid[:])
+	buf.Write(encmsg.ephpubkey[:])
+	buf.Write(encmsg.ephnonce[:])
+	buf.Write(encmsg.ephtag[:])
+	buf.Write(encmsg.nonce[:])
+	buf.Write(encmsg.tag[:])
+	hdr := base64.StdEncoding.EncodeToString(buf.Bytes())
+	hdr = wraplines(hdr)
+
+	str := base64.StdEncoding.EncodeToString(enc)
+	str = wraplines(str)
+
+	return "-----BEGIN REOP ENCRYPTED MESSAGE-----\n" +
+		"ident:" + seckey.ident + "\n" +
+		hdr + "\n" +
+		"-----BEGIN REOP ENCRYPTED MESSAGE DATA-----\n" +
+		str + "\n" +
+		"-----END REOP ENCRYPTED MESSAGE-----\n"
+}
+
+func main() {
+	seckey := readSeckey(os.Args[1])
+	pubkey := readPubkey(os.Args[2])
+
+	msg, err := ioutil.ReadFile(os.Args[3])
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	s := encryptMsg(seckey, pubkey, msg)
+	fmt.Println(s)
+}
+
+
+
