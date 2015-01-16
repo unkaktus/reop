@@ -68,6 +68,15 @@ likely leak some other way. Better IMO to simply not make that promise.
 
 Nonces, where necessary, are generated randomly.
 
+It was, in hindsight, not at all necessary to package up the nonce and tag
+separately for encrypted messages. The encrypted blob could have just included
+them. At the time, however, the signature code came first, and it's fairly
+obvious that detached signatures would be useful. After that, the C code for
+encryption followed the established pattern of operating "in place". And then
+the high level file API for reop followed the C code. Unlike a message without
+a signature, however, an encrypted message without a nonce is entirely
+useless. There's no reason to separate them; just organic accident.
+
 [The next two paragraphs are a little dated;
 	reop is using libsodium wrappers now.]
 
