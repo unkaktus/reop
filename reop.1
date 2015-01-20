@@ -151,6 +151,17 @@ Without this option,
 assumes
 .Ar message-file Ns .enc .
 .El
+.Sh ENVIRONMENT
+.Bl -tag -width Ds
+.It Ev REOP_PASSPHRASE
+Normally, when
+.Nm
+requires a password, it will prompt the user.
+Alternatively, a password can be provided in the environment which may be
+useful when executing
+.Nm
+as part of an automated system.
+.El
 .Sh FILES
 The key and data files created by
 .Nm
@@ -182,17 +193,6 @@ The
 .Pa pubkeyring
 file is simply a sequence of public key files, concatenated into one, and
 separated by newlines.
-.Sh ENVIRONMENT
-.Bl -tag -width Ds
-.It Ev REOP_PASSPHRASE
-Normally, when
-.Nm
-requires a password, it will prompt the user.
-Alternatively, a password can be provided in the environment which may be
-useful when executing
-.Nm
-as part of an automated system.
-.El
 .Sh EXIT STATUS
 .Ex -std reop
 It may fail for one of the following reasons:
