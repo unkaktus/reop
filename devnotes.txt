@@ -102,3 +102,8 @@ come from there and they're readily included in the other directory.
 
 There's a fake configure script which should cook up an almost decent
 Makefile.
+
+release checklist
+
+Update README and reop.1 to reflect changes and new version.
+chmod +x configure

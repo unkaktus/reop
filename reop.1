@@ -12,7 +12,7 @@
 .\"WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 .\"ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 .\"OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-.Dd $Mdocdate: January 11 2015 $
+.Dd $Mdocdate: January 20 2015 $
 .Dt REOP 1
 .Os
 .Sh NAME
@@ -125,10 +125,10 @@ When encrypting or decrypting, the plaintext.
 Do not ask for a passphrase during key generation.
 Without this option,
 .Nm
-will prompt you for a passphrase to protect the secret key.
+will prompt for a passphrase to protect the secret key.
 .Pp
 The purpose of protecting the secret key with a passphrase is so that, if
-somebody steals the secret key from your computer, they still cannot use it
+somebody steals the secret key, they still cannot use it
 unless they also learn the passhrase.
 .It Fl p Ar public-key-file
 A public key produced by
@@ -234,3 +234,10 @@ Verify a signed message, using the default identity:
 .Pp
 Add a new friend's public key to your keyring:
 .Dl $ cat new-friend.pub >> ~/.reop/pubkeyring
+.Sh HISTORY
+The
+.Nm
+command was first released on 1 Apr 2014.
+This document describes the forthcoming 3.0 release.
+.Sh AUTHORS
+.An Ted Unangst Aq Mt tedu@tedunangst.com
