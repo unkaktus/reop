@@ -6,10 +6,14 @@ has() {
 }
 
 doconfigure() {
-	printf 'CPPFLAGS=-I/usr/include -I/usr/local/include -Iother\n'
-	printf 'CFLAGS=-std=c99 -Wall -O2\n'
-	printf 'LDFLAGS=-L/usr/local/lib -lsodium\n'
+	cflags=$(pkg-config --cflags libsodium)
+	libs=$(pkg-config --libs libsodium)
+	[ -n "$cflags" ] || cflags='-I/usr/local/include'
+	[ -n "$libs" ] || libs='-L/usr/local/lib -lsodium'
 
+	printf 'CPPFLAGS=-I/usr/include -Iother\n'
+	printf 'CFLAGS=-std=c99 -Wall -O2 %s\n' "$cflags"
+	printf 'LDFLAGS=%s\n' "$libs"
 	printf 'OBJS=reop.o\n'
 	printf 'OBJS+=main.o\n'
 	# always include base64.c. testing for correct versions is too hard
