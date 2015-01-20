@@ -58,7 +58,7 @@ can also cryptographically sign and verify files, using public key
 cryptography.
 .Pp
 Select the mode of operation with the following options:
-.Bl -tag
+.Bl -tag -width Ds
 .It Fl D
 Decrypt a message-file.
 .It Fl E
@@ -88,7 +88,7 @@ message-file.
 .El
 .Pp
 The other options are as follows:
-.Bl -tag
+.Bl -tag -width Ds
 .It Fl 1
 (The number one.)
 Encrypt messages using the deprecated version 1 format.
@@ -168,7 +168,7 @@ option, the ciphertext is in binary format.)
 searches the
 .Pa ~/.reop
 directory for default keys named:
-.Bl -tag
+.Bl -tag -width Ds
 .It Pa seckey
 Your secret key
 .It Pa pubkey
@@ -183,7 +183,7 @@ The
 file is simply a sequence of public key files, concatenated into one, and
 separated by newlines.
 .Sh ENVIRONMENT
-.Bl -tag
+.Bl -tag -width Ds
 .It Ev REOP_PASSPHRASE
 Normally, when
 .Nm
