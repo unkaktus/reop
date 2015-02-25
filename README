@@ -16,10 +16,10 @@ to expect a PGP program to do. I may be wrong, but it kills me to see people
 reaching for the gpg or openssl hammer of infinite possibilities for the
 simplest of tasks. Limitations below.
 
-There is a (short) manual, of course, but there aren’t so many options that you
-should need to consult it more than once. Usually the short help text should be
-sufficient to get you started. I’ve tried to keep the option mnemonics
-reasonable.
+There is a (short) manual, of course, but there aren’t so many options that
+you should need to consult it more than once. Usually the short help text
+should be sufficient to get you started. I’ve tried to keep the option
+mnemonics reasonable.
 
 reop -G -i tedu # create tedu key pair
 reop -E -i ralph -m message # encrypt a message for ralph
@@ -28,9 +28,9 @@ reop -D -x message.enc # ralph decrypts my message
 The full manual is in reop.1. Also available preformatted as reop.txt.
 
 I had a short lived plan to support the real OpenPGP standard, but as I was
-scrolling through it, I came across the words “ASN.1 Object Identifiers” and my
-monitor went blank to prevent permanent damage. As it is, reop implements a
-sort of look-alike/feel-alike facsimile of the standard.
+scrolling through it, I came across the words “ASN.1 Object Identifiers” and
+my monitor went blank to prevent permanent damage. As it is, reop implements
+a sort of look-alike/feel-alike facsimile of the standard.
 
 Example:
 
@@ -54,18 +54,18 @@ RWRDU7WXSyb54bQhy9CZ7Qq6kUZMeOkxDeFNDOU/jl6oQp+vfgGbIP9mRinCQ/pnpvqCMjLnDG7I
 I8gMZw/P6zJ+jEaFZX+9pTyCYA==
 -----END REOP PUBLIC KEY-----
 
-You don’t get to pick your algorithms. I pick them (sort of; nacl picked them).
-There is theoretical support for future algorithm changes. In general, reop
-only asks questions that only the user can answer, and which the user should be
-able to answer. Fewer features -> fewer feature options -> fewer commands to
-edit, adjust, and otherwise tweak those options.
+You don’t get to pick your algorithms. I pick them (sort of; nacl picked
+them). There is theoretical support for future algorithm changes. In general,
+reop only asks questions that only the user can answer, and which the user
+should be able to answer. Fewer features -> fewer feature options -> fewer
+commands to edit, adjust, and otherwise tweak those options.
 
 crypto
 
 All the crypto comes from nacl (indirectly via libsodium). Specifically,
-reop uses crypto_sign (Ed25519), crypto_box (Curve25519, Salsa20, and Poly1305)
-and crypto_secretbox (Salsa20 and Poly1305). I have not personally vetted these
-functions. Internet told me they were safe.
+reop uses crypto_sign (Ed25519), crypto_box (Curve25519, Salsa20, and
+Poly1305) and crypto_secretbox (Salsa20 and Poly1305). I have not personally
+vetted these functions. Internet told me they were safe.
 
 While it's possible to use these constructions to provide sender
 confidentiality, I'm not sure it's a good fit for reop. It doesn't
@@ -83,9 +83,9 @@ people have ever revoked their PGP keys to see how it works in practice. The
 reop trust model is very simple. You can probably even understand it.
 
 Keys don’t expire. If we expand the scope of inquiry slightly to TLS certs,
-I’ve lost count of the problems I’ve seen caused by prematurely expiring certs.
-Number of times an expired cert has saved my ass? Zero. This is arguably
-shortsighted, I know.
+I’ve lost count of the problems I’ve seen caused by prematurely expiring
+certs.  Number of times an expired cert has saved my ass? Zero. This is
+arguably shortsighted, I know.
 
 You can’t embed a JPG selfie into reop keys. Not even a tiny one.
 
