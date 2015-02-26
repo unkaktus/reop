@@ -31,6 +31,11 @@
 #include <unistd.h>
 #include <readpassphrase.h>
 
+/* OS X? FreeBSD? */
+#ifndef _NSIG
+#define _NSIG NSIG
+#endif
+
 #define _PATH_TTY "/dev/tty"
 
 #ifdef TCSASOFT
