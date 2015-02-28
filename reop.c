@@ -365,19 +365,19 @@ wraplines(char *str, size_t space)
  * create a filename based on user's home directory.
  * requires that ~/.reop exist.
  */
-static char *
-gethomefile(const char *filename, char *buf)
+static int
+gethomefile(const char *filename, char *buf, size_t buflen)
 {
 	struct stat sb;
 	const char *home;
 
 	if (!(home = getenv("HOME")))
-		return NULL;
-	snprintf(buf, 1024, "%s/.reop", home);
+		return -1;
+	snprintf(buf, buflen, "%s/.reop", home);
 	if (stat(buf, &sb) == -1 || !S_ISDIR(sb.st_mode))
-		return NULL;
-	snprintf(buf, 1024, "%s/.reop/%s", home, filename);
-	return buf;
+		return -1;
+	snprintf(buf, buflen, "%s/.reop/%s", home, filename);
+	return 0;
 }
 
 /*
@@ -535,9 +535,8 @@ findpubkey(const char *ident, struct reop_pubkey *key)
 	const char *beginkey = "-----BEGIN REOP PUBLIC KEY-----\n";
 	const char *endkey = "-----END REOP PUBLIC KEY-----\n";
 
-	char namebuf[1024];
-	const char *keyringname = gethomefile("pubkeyring", namebuf);
-	if (!keyringname)
+	char keyringname[1024];
+	if (gethomefile("pubkeyring", keyringname, sizeof(keyringname)) != 0)
 		return -1;
 	FILE *fp = fopen(keyringname, "r");
 	if (!fp)
@@ -597,8 +596,8 @@ reop_getpubkey(const char *pubkeyfile, const char *ident)
 		return NULL;
 	}
 	char namebuf[1024];
-	if (!pubkeyfile)
-		pubkeyfile = gethomefile("pubkey", namebuf);
+	if (!pubkeyfile && gethomefile("pubkey", namebuf, sizeof(namebuf)) == 0)
+		pubkeyfile = namebuf;
 	if (!pubkeyfile) {
 		free(pubkey);
 		return NULL;
@@ -629,8 +628,8 @@ reop_getseckey(const char *seckeyfile, const char *password)
 		return NULL;
 
 	char namebuf[1024];
-	if (!seckeyfile)
-		seckeyfile = gethomefile("seckey", namebuf);
+	if (!seckeyfile && gethomefile("seckey", namebuf, sizeof(namebuf)) == 0)
+		seckeyfile = namebuf;
 	if (!seckeyfile) {
 		free(seckey);
 		return NULL;
@@ -775,16 +774,16 @@ generate(const char *pubkeyfile, const char *seckeyfile, const char *ident,
 	encryptseckey(&copy, password);
 
 	char secnamebuf[1024];
-	if (!seckeyfile)
-		seckeyfile = gethomefile("seckey", secnamebuf);
+	if (!seckeyfile && gethomefile("seckey", secnamebuf, sizeof(secnamebuf)) == 0)
+		seckeyfile = secnamebuf;
 	if (!seckeyfile)
 		errx(1, "no seckeyfile");
 	writekeyfile(seckeyfile, "SECRET KEY", &copy, seckeysize,
 	    ident, O_EXCL, 0600);
 
 	char pubnamebuf[1024];
-	if (!pubkeyfile)
-		pubkeyfile = gethomefile("pubkey", pubnamebuf);
+	if (!pubkeyfile && gethomefile("pubkey", pubnamebuf, sizeof(pubnamebuf)) == 0)
+		pubkeyfile = pubnamebuf;
 	if (!pubkeyfile)
 		errx(1, "no pubkeyfile");
 	writekeyfile(pubkeyfile, "PUBLIC KEY", keypair.pubkey, pubkeysize,
