@@ -672,17 +672,6 @@ encodekey(const char *info, const void *key, size_t keylen, const char *ident)
 	return str;
 }
 
-static void
-writekeyfile(const char *filename, const char *info, const void *key,
-    size_t keylen, const char *ident, int oflags, mode_t mode)
-{
-	int fd = xopen(filename, O_CREAT|oflags|O_NOFOLLOW|O_WRONLY, mode);
-	const char *keydata = encodekey(info, key, keylen, ident);
-	writeall(fd, keydata, strlen(keydata), filename);
-	reop_freestr(keydata);
-	close(fd);
-}
-
 /*
  * generate a complete key pair (actually two, for signing and encryption)
  */
@@ -768,28 +757,33 @@ void
 generate(const char *pubkeyfile, const char *seckeyfile, const char *ident,
     const char *password)
 {
-
 	struct reop_keypair keypair = reop_generate(ident);
-	struct reop_seckey copy = *keypair.seckey;
-	encryptseckey(&copy, password);
 
 	char secnamebuf[1024];
 	if (!seckeyfile && gethomefile("seckey", secnamebuf, sizeof(secnamebuf)) == 0)
 		seckeyfile = secnamebuf;
 	if (!seckeyfile)
 		errx(1, "no seckeyfile");
-	writekeyfile(seckeyfile, "SECRET KEY", &copy, seckeysize,
-	    ident, O_EXCL, 0600);
+
+	int fd = xopen(seckeyfile, O_CREAT|O_EXCL|O_NOFOLLOW|O_WRONLY, 0600);
+	const char *keydata = reop_encodeseckey(keypair.seckey, password);
+	writeall(fd, keydata, strlen(keydata), seckeyfile);
+	reop_freestr(keydata);
+	close(fd);
+
 
 	char pubnamebuf[1024];
 	if (!pubkeyfile && gethomefile("pubkey", pubnamebuf, sizeof(pubnamebuf)) == 0)
 		pubkeyfile = pubnamebuf;
 	if (!pubkeyfile)
 		errx(1, "no pubkeyfile");
-	writekeyfile(pubkeyfile, "PUBLIC KEY", keypair.pubkey, pubkeysize,
-	    ident, O_EXCL, 0666);
 
-	sodium_memzero(&copy, sizeof(copy));
+	fd = xopen(pubkeyfile, O_CREAT|O_EXCL|O_NOFOLLOW|O_WRONLY, 0666);
+	keydata = reop_encodepubkey(keypair.pubkey);
+	writeall(fd, keydata, strlen(keydata), pubkeyfile);
+	reop_freestr(keydata);
+	close(fd);
+
 	reop_freepubkey(keypair.pubkey);
 	reop_freeseckey(keypair.seckey);
 }
@@ -900,9 +894,13 @@ signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
 
 	if (embedded)
 		writesignedmsg(sigfile, sig, sig->ident, msg, msglen);
-	else
-		writekeyfile(sigfile, "SIGNATURE", sig, sigsize,
-		    sig->ident, O_TRUNC, 0666);
+	else {
+		int fd = xopen(sigfile, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
+		const char *sigdata = reop_encodesig(sig);
+		writeall(fd, sigdata, strlen(sigdata), sigfile);
+		reop_freestr(sigdata);
+		close(fd);
+	}
 
 	reop_freesig(sig);
 	xfree(msg, msglen);
