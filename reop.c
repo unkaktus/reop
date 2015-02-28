@@ -268,12 +268,13 @@ signraw(const uint8_t *seckey, const uint8_t *buf, uint64_t buflen,
 /*
  * wrapper around crypto_sign_open supporting detached signatures
  */
-static void
+static int
 verifyraw(const uint8_t *pubkey, const uint8_t *buf, uint64_t buflen,
     const uint8_t *sig)
 {
 	if (crypto_sign_verify_detached(sig, buf, buflen, pubkey) == -1)
-		errx(1, "signature verification failed");
+		return -1;
+	return 0;
 }
 
 /* file utilities */
@@ -918,13 +919,17 @@ signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
 /*
  * basic verify function
  */
-void
+reop_verify_result
 reop_verify(const struct reop_pubkey *pubkey, const uint8_t *msg, uint64_t msglen,
     const struct reop_sig *sig)
 {
 	if (memcmp(pubkey->randomid, sig->randomid, RANDOMIDLEN) != 0)
-		errx(1, "verification failed: checked against wrong key");
-	verifyraw(pubkey->sigkey, msg, msglen, sig->sig);
+		return (reop_verify_result) { REOP_V_MISMATCH };
+
+	if (verifyraw(pubkey->sigkey, msg, msglen, sig->sig) == -1)
+		return (reop_verify_result) { REOP_V_FAIL };
+
+	return (reop_verify_result) { REOP_V_OK };
 }
 
 /*
@@ -942,9 +947,17 @@ verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
 	if (!pubkey)
 		errx(1, "no pubkey");
 
-	reop_verify(pubkey, msg, msglen, sig);
-	if (!quiet)
-		printf("Signature Verified\n");
+	reop_verify_result rv = reop_verify(pubkey, msg, msglen, sig);
+	switch (rv.v) {
+	case REOP_V_OK:
+		if (!quiet)
+			printf("Signature Verified\n");
+		break;
+	case REOP_V_MISMATCH:
+		errx(1, "verification failed: checked against wrong key");
+	default:
+		errx(1, "signature verification failed");
+	}
 
 	reop_freesig(sig);
 	reop_freepubkey(pubkey);
@@ -978,9 +991,17 @@ verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet)
 	if (!pubkey)
 		errx(1, "no pubkey");
 
-	reop_verify(pubkey, (uint8_t*)msg, msglen, sig);
-	if (!quiet)
-		printf("Signature Verified\n");
+	reop_verify_result rv = reop_verify(pubkey, (uint8_t *)msg, msglen, sig);
+	switch (rv.v) {
+	case REOP_V_OK:
+		if (!quiet)
+			printf("Signature Verified\n");
+		break;
+	case REOP_V_MISMATCH:
+		errx(1, "verification failed: checked against wrong key");
+	default:
+		errx(1, "signature verification failed");
+	}
 
 	reop_freesig(sig);
 	reop_freepubkey(pubkey);

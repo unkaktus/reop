@@ -45,7 +45,13 @@ void reop_freeseckey(const struct reop_seckey *reop_seckey);
 /* sign and verify */
 const struct reop_sig *reop_sign(const struct reop_seckey *seckey, const uint8_t *msg,
     uint64_t msglen);
-void reop_verify(const struct reop_pubkey *reop_pubkey, const uint8_t *msg, uint64_t msglen,
+enum reop_verify_code {
+	REOP_V_OK = 0,
+	REOP_V_FAIL,
+	REOP_V_MISMATCH,
+};
+typedef struct { enum reop_verify_code v; } reop_verify_result;
+reop_verify_result reop_verify(const struct reop_pubkey *reop_pubkey, const uint8_t *msg, uint64_t msglen,
     const struct reop_sig *reop_sig);
 
 /* sig functions */
