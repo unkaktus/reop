@@ -459,12 +459,12 @@ kdf(uint8_t *salt, size_t saltlen, int rounds, const char *password,
 
 	char passbuf[1024];
 	if (!password) {
-		int rppflags = RPP_ECHO_OFF;
+		int rppflags = RPP_REQUIRE_TTY | RPP_ECHO_OFF;
 		if (!readpassphrase("passphrase: ", passbuf, sizeof(passbuf), rppflags))
 			errx(1, "unable to read passphrase");
 		if (strlen(passbuf) == 0)
 			errx(1, "please provide a password");
-		if (confirm.v && !(rppflags & RPP_STDIN)) {
+		if (confirm.v) {
 			char pass2[1024];
 
 			if (!readpassphrase("confirm passphrase: ", pass2,
