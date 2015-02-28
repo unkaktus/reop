@@ -527,65 +527,55 @@ decryptseckey(struct reop_seckey *seckey, const char *password)
 
 /*
  * read user's pubkeyring file to allow lookup by ident
+ * blank lines are permitted between keys, but not within
  */
-static const struct reop_pubkey *
-findpubkey(const char *ident)
+static int
+findpubkey(const char *ident, struct reop_pubkey *key)
 {
-	static struct reop_pubkey *keys;
-	static int numkeys;
-	static int done;
 	const char *beginkey = "-----BEGIN REOP PUBLIC KEY-----\n";
 	const char *endkey = "-----END REOP PUBLIC KEY-----\n";
 
-	if (!done) {
-		char line[1024];
+	char namebuf[1024];
+	const char *keyringname = gethomefile("pubkeyring", namebuf);
+	if (!keyringname)
+		return -1;
+	FILE *fp = fopen(keyringname, "r");
+	if (!fp)
+		return -1;
+
+	char line[1024];
+	while (fgets(line, sizeof(line), fp)) {
 		char buf[1024];
-		int maxkeys = 0;
-
-		done = 1;
-		char namebuf[1024];
-		const char *keyringname = gethomefile("pubkeyring", namebuf);
-		if (!keyringname)
-			return NULL;
-		FILE *fp = fopen(keyringname, "r");
-		if (!fp)
-			return NULL;
-
-		while (fgets(line, sizeof(line), fp)) {
-			buf[0] = 0;
-			int identline = 1;
-			if (line[0] == 0 || line[0] == '\n')
+		buf[0] = 0;
+		int identline = 1;
+		if (line[0] == 0 || line[0] == '\n')
+			continue;
+		if (strncmp(line, beginkey, strlen(beginkey)) != 0)
+			goto fail;
+		char identbuf[IDENTLEN];
+		while (1) {
+			if (!fgets(line, sizeof(line), fp))
+				goto fail;
+			if (identline) {
+				readident(line, identbuf);
+				identline = 0;
 				continue;
-			if (strncmp(line, beginkey, strlen(beginkey)) != 0)
-				errx(1, "invalid keyring line: %s", line);
-			if (numkeys == maxkeys) {
-				maxkeys = maxkeys ? maxkeys * 2 : 4;
-				if (!(keys = realloc(keys, sizeof(*keys) * maxkeys)))
-					err(1, "realloc keyring");
 			}
-			while (1) {
-				if (!fgets(line, sizeof(line), fp))
-					errx(1, "premature pubkeyring EOF");
-				if (identline) {
-					readident(line, keys[numkeys].ident);
-					identline = 0;
-					continue;
-				}
-				if (strncmp(line, endkey, strlen(endkey)) == 0)
-					break;
-				strlcat(buf, line, sizeof(buf));
-			}
-			if (reopb64_pton(buf, (void *)&keys[numkeys], pubkeysize) != pubkeysize)
-				errx(1, "invalid keyring b64 encoding");
-			if (numkeys++ > 1000000)
-				errx(1, "too many keys");
+			if (strncmp(line, endkey, strlen(endkey)) == 0)
+				break;
+			strlcat(buf, line, sizeof(buf));
+		}
+		if (strcmp(ident, identbuf) == 0) {
+			strlcpy(key->ident, identbuf, sizeof(key->ident));
+			if (reopb64_pton(buf, (void *)key, pubkeysize) != pubkeysize)
+				goto fail;
+			fclose(fp);
+			return 0;
 		}
 	}
-	for (int i = 0; i < numkeys; i++) {
-		if (strcmp(ident, keys[i].ident) == 0)
-			return &keys[i];
-	}
-	return NULL;
+fail:
+	fclose(fp);
+	return -1;
 }
 
 /*
@@ -601,11 +591,9 @@ reop_getpubkey(const char *pubkeyfile, const char *ident)
 		return NULL;
 
 	if (!pubkeyfile && ident) {
-		const struct reop_pubkey *identkey;
-		if ((identkey = findpubkey(ident))) {
-			*pubkey = *identkey;
+		if (findpubkey(ident, pubkey) == 0)
 			return pubkey;
-		}
+		free(pubkey);
 		return NULL;
 	}
 	char namebuf[1024];
