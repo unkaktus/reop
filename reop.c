@@ -65,6 +65,7 @@
 #define REOP_BINARY "RBF"
 
 /* metadata */
+/* these types are holdovers from before */
 struct symmsg {
 	uint8_t symalg[2];
 	uint8_t kdfalg[2];
@@ -101,6 +102,11 @@ struct oldekcmsg {
 	uint8_t tag[ENCTAGBYTES];
 };
 
+/*
+ * new types
+ * everything up to the ident is stored base64 encoded.
+ * the ident is stored on a line by itself.
+ */
 struct reop_seckey {
 	uint8_t sigalg[2];
 	uint8_t encalg[2];
@@ -343,7 +349,7 @@ writeb64data(int fd, const char *filename, char *b64)
 
 /*
  * wrap lines in place.
- * start at the end and pull the string down we go.
+ * start at the end and pull the string down as we go.
  */
 static void
 wraplines(char *str, size_t space)
@@ -486,8 +492,9 @@ kdf(uint8_t *salt, size_t saltlen, int rounds, const char *password,
 
 /*
  * secret keys are themselves encrypted before export to string format.
- * they must be decrypted before use. even zero round keys (passwordless)
+ * they must be decrypted before use. even zero round keys (empty password)
  * are still encrypted with a null key.
+ * these functions will prompt for password if none is provided.
  */
 void
 encryptseckey(struct reop_seckey *seckey, const char *password)
