@@ -400,13 +400,15 @@ readident(char *buf, char *ident)
  * will parse a few different kinds of keys
  */
 static void
-parsekeydata(const char *keydataorig, void *key, size_t keylen, char *ident)
+parsekeydata(const char *keydataorig, const char *keytype, void *key, size_t keylen, char *ident)
 {
-	const char *beginkey = "-----BEGIN REOP";
-	const char *endkey = "-----END REOP";
+	const char *beginkey = "-----BEGIN REOP ";
+	const char *endkey = "-----END REOP ";
 
 	char *keydata = strdup(keydataorig);
 	if (strncmp(keydata, beginkey, strlen(beginkey)) != 0)
+		goto invalid;
+	if (strncmp(keydata + strlen(beginkey), keytype, strlen(keytype)) != 0)
 		goto invalid;
 	char *end;
 	if (!(end = strstr(keydata, endkey)))
@@ -431,12 +433,12 @@ invalid:
  * read and parse a key
  */
 static void
-readkeyfile(const char *filename, void *key, size_t keylen, char *ident)
+readkeyfile(const char *filename, const char *keytype, void *key, size_t keylen, char *ident)
 {
 	uint64_t keydatalen;
 	char *keydata = readall(filename, &keydatalen);
 
-	parsekeydata(keydata, key, keylen, ident);
+	parsekeydata(keydata, keytype, key, keylen, ident);
 	xfree(keydata, keydatalen);
 }
 
@@ -603,7 +605,7 @@ reop_getpubkey(const char *pubkeyfile, const char *ident)
 		return NULL;
 	}
 
-	readkeyfile(pubkeyfile, pubkey, pubkeysize, pubkey->ident);
+	readkeyfile(pubkeyfile, "PUBLIC KEY", pubkey, pubkeysize, pubkey->ident);
 	return pubkey;
 }
 
@@ -635,7 +637,7 @@ reop_getseckey(const char *seckeyfile, const char *password)
 		return NULL;
 	}
 
-	readkeyfile(seckeyfile, seckey, seckeysize, seckey->ident);
+	readkeyfile(seckeyfile, "SECRET KEY", seckey, seckeysize, seckey->ident);
 	decryptseckey(seckey, password);
 	return seckey;
 }
@@ -714,7 +716,7 @@ const struct reop_pubkey *
 reop_parsepubkey(const char *pubkeydata)
 {
 	struct reop_pubkey *pubkey = xmalloc(sizeof(*pubkey));
-	parsekeydata(pubkeydata, pubkey, pubkeysize, pubkey->ident);
+	parsekeydata(pubkeydata, "PUBLIC KEY", pubkey, pubkeysize, pubkey->ident);
 	return pubkey;
 }
 
@@ -734,7 +736,7 @@ const struct reop_seckey *
 reop_parseseckey(const char *seckeydata, const char *password)
 {
 	struct reop_seckey *seckey = xmalloc(sizeof(*seckey));
-	parsekeydata(seckeydata, seckey, seckeysize, seckey->ident);
+	parsekeydata(seckeydata, "SECRET KEY", seckey, seckeysize, seckey->ident);
 
 	decryptseckey(seckey, password);
 	return seckey;
@@ -848,7 +850,7 @@ const struct reop_sig *
 reop_parsesig(const char *sigdata)
 {
 	struct reop_sig *sig = xmalloc(sizeof(*sig));
-	parsekeydata(sigdata, sig, sigsize, sig->ident);
+	parsekeydata(sigdata, "SIGNATURE", sig, sigsize, sig->ident);
 	return sig;
 }
 
