@@ -289,8 +289,10 @@ readall(const char *filename, uint64_t *msglenp)
 
 	int fd = xopen(filename, O_RDONLY | O_NOFOLLOW, 0);
 	if (fstat(fd, &sb) == 0 && S_ISREG(sb.st_mode)) {
-		if (sb.st_size > maxmsgsize)
-			errx(1, "msg too large in %s", filename);
+		if (sb.st_size > maxmsgsize) {
+			close(fd);
+			return NULL;
+		}
 		space = sb.st_size + 1;
 	} else {
 		space = 64 * 1024 - 1;
@@ -301,13 +303,13 @@ readall(const char *filename, uint64_t *msglenp)
 	while (1) {
 		if (space == 0) {
 			if (msglen * 2 > maxmsgsize)
-				errx(1, "msg too large in %s", filename);
+				goto fail;
 			space = msglen;
 			if (!(msg = realloc(msg, msglen + space + 1)))
-				errx(1, "realloc");
+				goto fail;
 		}
 		if ((x = read(fd, msg + msglen, space)) == -1)
-			err(1, "read from %s", filename);
+			goto fail;
 		if (x == 0)
 			break;
 		space -= x;
@@ -318,6 +320,10 @@ readall(const char *filename, uint64_t *msglenp)
 	msg[msglen] = 0;
 	*msglenp = msglen;
 	return msg;
+fail:
+	close(fd);
+	free(msg);
+	return NULL;
 }
 
 static void
@@ -446,6 +452,8 @@ readkeyfile(const char *filename, const char *keytype, void *key, size_t keylen,
 {
 	uint64_t keydatalen;
 	char *keydata = readall(filename, &keydatalen);
+	if (!keydata)
+		errx(1, "could not read %s", filename);
 
 	parsekeydata(keydata, keytype, key, keylen, ident);
 	xfree(keydata, keydatalen);
@@ -893,6 +901,8 @@ readsigfile(const char *sigfile)
 {
 	uint64_t sigdatalen;
 	char *sigdata = readall(sigfile, &sigdatalen);
+	if (!sigdata)
+		errx(1, "could not read %s", sigfile);
 	const struct reop_sig *sig = reop_parsesig(sigdata);
 	xfree(sigdata, sigdatalen);
 	return sig;
@@ -907,6 +917,8 @@ signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
 {
 	uint64_t msglen;
 	uint8_t *msg = readall(msgfile, &msglen);
+	if (!msg)
+		errx(1, "could not read %s", msgfile);
 
 	const struct reop_seckey *seckey = reop_getseckey(seckeyfile, NULL);
 	if (!seckey)
@@ -955,6 +967,8 @@ verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
 {
 	uint64_t msglen;
 	uint8_t *msg = readall(msgfile, &msglen);
+	if (!msg)
+		errx(1, "could not read %s", msgfile);
 
 	const struct reop_sig *sig = readsigfile(sigfile);
 	const struct reop_pubkey *pubkey = reop_getpubkey(pubkeyfile, sig->ident);
@@ -989,6 +1003,8 @@ verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet)
 
 	uint64_t msgdatalen;
 	char *msgdata = readall(sigfile, &msgdatalen);
+	if (!msgdata)
+		errx(1, "could not read %s", sigfile);
 
 	if (strncmp(msgdata, beginmsg, strlen(beginmsg)) != 0)
  		goto fail;
@@ -1090,6 +1106,8 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 
 	uint64_t msglen;
 	uint8_t *msg = readall(msgfile, &msglen);
+	if (!msg)
+		errx(1, "could not read %s", msgfile);
 
 	const struct reop_pubkey *pubkey = reop_getpubkey(pubkeyfile, ident);
 	if (!pubkey)
@@ -1139,6 +1157,8 @@ v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 
 	uint64_t msglen;
 	uint8_t *msg = readall(msgfile, &msglen);
+	if (!msg)
+		errx(1, "could not read %s", msgfile);
 
 	if (memcmp(pubkey->encalg, ENCKEYALG, 2) != 0)
 		errx(1, "unsupported key format");
@@ -1170,6 +1190,8 @@ symencrypt(const char *msgfile, const char *encfile, opt_binary binary)
 
 	uint64_t msglen;
 	uint8_t *msg = readall(msgfile, &msglen);
+	if (!msg)
+		errx(1, "could not read %s", msgfile);
 
 	int rounds = 42;
 
@@ -1210,6 +1232,8 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 
 	uint64_t encdatalen;
 	char *encdata = readall(encfile, &encdatalen);
+	if (!encdata)
+		errx(1, "could not read %s", encfile);
 	if (encdatalen > 6 && memcmp(encdata, REOP_BINARY, 4) == 0) {
 		uint8_t *ptr = (uint8_t *)encdata + 4;
 		uint8_t *endptr = (uint8_t *)encdata + encdatalen;
