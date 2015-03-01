@@ -416,7 +416,7 @@ readident(char *buf, char *ident)
 /*
  * will parse a few different kinds of keys
  */
-static void
+static int
 parsekeydata(const char *keydataorig, const char *keytype, void *key, size_t keylen, char *ident)
 {
 	const char *beginkey = "-----BEGIN REOP ";
@@ -440,25 +440,12 @@ parsekeydata(const char *keydataorig, const char *keytype, void *key, size_t key
 		errx(1, "invalid b64 encoding");
 
 	xfree(keydata, strlen(keydata));
-	return;
+
+	return 0;
 
 invalid:
 	errx(1, "invalid key data");
-}
-
-/*
- * read and parse a key
- */
-static void
-readkeyfile(const char *filename, const char *keytype, void *key, size_t keylen, char *ident)
-{
-	uint64_t keydatalen;
-	char *keydata = readall(filename, &keydatalen);
-	if (!keydata)
-		errx(1, "could not read %s", filename);
-
-	parsekeydata(keydata, keytype, key, keylen, ident);
-	xfree(keydata, keydatalen);
+	return -1; /* xxx */
 }
 
 /*
@@ -629,7 +616,18 @@ reop_getpubkey(const char *pubkeyfile, const char *ident)
 		return NULL;
 	}
 
-	readkeyfile(pubkeyfile, "PUBLIC KEY", pubkey, pubkeysize, pubkey->ident);
+	uint64_t keydatalen;
+	char *keydata = readall(pubkeyfile, &keydatalen);
+	if (!keydata) {
+		free(pubkey);
+		return NULL;
+	}
+	int rv = parsekeydata(keydata, "PUBLIC KEY", pubkey, pubkeysize, pubkey->ident);
+	xfree(keydata, keydatalen);
+	if (rv != 0) {
+		free(pubkey);
+		return NULL;
+	}
 	return pubkey;
 }
 
@@ -661,8 +659,20 @@ reop_getseckey(const char *seckeyfile, const char *password)
 		return NULL;
 	}
 
-	readkeyfile(seckeyfile, "SECRET KEY", seckey, seckeysize, seckey->ident);
-	int rv = decryptseckey(seckey, password);
+	uint64_t keydatalen;
+	char *keydata = readall(seckeyfile, &keydatalen);
+	if (!keydata) {
+		free(seckey);
+		return NULL;
+	}
+
+	int rv = parsekeydata(keydata, "SECRET KEY", seckey, seckeysize, seckey->ident);
+	xfree(keydata, keydatalen);
+	if (rv != 0) {
+		xfree(seckey, sizeof(*seckey));
+		return NULL;
+	}
+	rv = decryptseckey(seckey, password);
 	if (rv != 0) {
 		xfree(seckey, sizeof(*seckey));
 		return NULL;
