@@ -305,8 +305,10 @@ readall(const char *filename, uint64_t *msglenp)
 			if (msglen * 2 > maxmsgsize)
 				goto fail;
 			space = msglen;
-			if (!(msg = realloc(msg, msglen + space + 1)))
+			uint8_t *newmsg;
+			if (!(newmsg = realloc(msg, msglen + space + 1)))
 				goto fail;
+			msg = newmsg;
 		}
 		if ((x = read(fd, msg + msglen, space)) == -1)
 			goto fail;
