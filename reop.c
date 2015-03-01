@@ -519,11 +519,11 @@ encryptseckey(struct reop_seckey *seckey, const char *password)
 	sodium_memzero(symkey, sizeof(symkey));
 }
 
-void
+int
 decryptseckey(struct reop_seckey *seckey, const char *password)
 {
 	if (memcmp(seckey->kdfalg, KDFALG, 2) != 0)
-		errx(1, "unsupported KDF");
+		return -2;
 
 	uint8_t symkey[SYMKEYBYTES];
 	kdf_confirm confirm = { 0 };
@@ -534,9 +534,11 @@ decryptseckey(struct reop_seckey *seckey, const char *password)
 	    confirm, symkey, sizeof(symkey));
 	int rv = symdecryptraw(seckey->sigkey, sizeof(seckey->sigkey) + sizeof(seckey->enckey),
 	    seckey->nonce, seckey->tag, symkey);
-	if (rv != 0)
-		errx(1, "sym decryption failed");
 	sodium_memzero(symkey, sizeof(symkey));
+	if (rv != 0)
+		return rv;
+
+	return 0;
 }
 
 /*
@@ -650,7 +652,11 @@ reop_getseckey(const char *seckeyfile, const char *password)
 	}
 
 	readkeyfile(seckeyfile, "SECRET KEY", seckey, seckeysize, seckey->ident);
-	decryptseckey(seckey, password);
+	int rv = decryptseckey(seckey, password);
+	if (rv != 0) {
+		xfree(seckey, sizeof(*seckey));
+		return NULL;
+	}
 	return seckey;
 }
 
@@ -750,7 +756,11 @@ reop_parseseckey(const char *seckeydata, const char *password)
 	struct reop_seckey *seckey = xmalloc(sizeof(*seckey));
 	parsekeydata(seckeydata, "SECRET KEY", seckey, seckeysize, seckey->ident);
 
-	decryptseckey(seckey, password);
+	int rv = decryptseckey(seckey, password);
+	if (rv != 0) {
+		xfree(seckey, sizeof(*seckey));
+		return NULL;
+	}
 	return seckey;
 }
 
