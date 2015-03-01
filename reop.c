@@ -221,13 +221,14 @@ symencryptraw(uint8_t *buf, uint64_t buflen, uint8_t *nonce, uint8_t *tag, const
  * wrapper around crypto_secretbox_open.
  * operates on buf "in place".
  */
-static void
+static int
 symdecryptraw(uint8_t *buf, uint64_t buflen, const uint8_t *nonce, uint8_t *tag,
     const uint8_t *symkey)
 {
 	if (crypto_secretbox_open_detached(buf, buf, tag,
 	    buflen, nonce, symkey) == -1)
-		errx(1, "sym decryption failed");
+		return -1;
+	return 0;
 }
 
 /*
@@ -246,13 +247,14 @@ pubencryptraw(uint8_t *buf, uint64_t buflen, uint8_t *nonce, uint8_t *tag,
  * wrapper around crypto_box_open.
  * operates on buf "in place".
  */
-static void
+static int
 pubdecryptraw(uint8_t *buf, uint64_t buflen, uint8_t *nonce, uint8_t *tag,
     const uint8_t *pubkey, const uint8_t *seckey)
 {
 	if (crypto_box_open_detached(buf, buf, tag,
 	    buflen, nonce, pubkey, seckey) == -1)
-		errx(1, "pub decryption failed");
+		return -1;
+	return 0;
 }
 
 /*
@@ -530,8 +532,10 @@ decryptseckey(struct reop_seckey *seckey, const char *password)
 
 	kdf(seckey->salt, sizeof(seckey->salt), rounds, password,
 	    confirm, symkey, sizeof(symkey));
-	symdecryptraw(seckey->sigkey, sizeof(seckey->sigkey) + sizeof(seckey->enckey),
+	int rv = symdecryptraw(seckey->sigkey, sizeof(seckey->sigkey) + sizeof(seckey->enckey),
 	    seckey->nonce, seckey->tag, symkey);
+	if (rv != 0)
+		errx(1, "sym decryption failed");
 	sodium_memzero(symkey, sizeof(symkey));
 }
 
@@ -1192,7 +1196,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		struct oldekcmsg oldekcmsg;
 	} hdr;
 	uint8_t symkey[SYMKEYBYTES];
-	int hdrsize;
+	int hdrsize, rv;
 
 	uint64_t encdatalen;
 	char *encdata = readall(encfile, &encdatalen);
@@ -1279,7 +1283,9 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		int rounds = ntohl(hdr.symmsg.kdfrounds);
 		kdf(hdr.symmsg.salt, sizeof(hdr.symmsg.salt), rounds, NULL,
 		    confirm, symkey, sizeof(symkey));
-		symdecryptraw(msg, msglen, hdr.symmsg.nonce, hdr.symmsg.tag, symkey);
+		rv = symdecryptraw(msg, msglen, hdr.symmsg.nonce, hdr.symmsg.tag, symkey);
+		if (rv != 0)
+			errx(1, "sym decryption failed");
 		sodium_memzero(symkey, sizeof(symkey));
 	} else if (memcmp(hdr.alg, ENCALG, 2) == 0) {
 		if (hdrsize != sizeof(hdr.encmsg))
@@ -1298,10 +1304,14 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 			errx(1, "unsupported key format");
 		if (memcmp(seckey->encalg, ENCKEYALG, 2) != 0)
 			errx(1, "unsupported key format");
-		pubdecryptraw(hdr.encmsg.ephpubkey, sizeof(hdr.encmsg.ephpubkey),
+		rv = pubdecryptraw(hdr.encmsg.ephpubkey, sizeof(hdr.encmsg.ephpubkey),
 		    hdr.encmsg.ephnonce, hdr.encmsg.ephtag, pubkey->enckey, seckey->enckey);
-		pubdecryptraw(msg, msglen, hdr.encmsg.nonce, hdr.encmsg.tag,
+		if (rv != 0)
+			errx(1, "pub decryption failed");
+		rv = pubdecryptraw(msg, msglen, hdr.encmsg.nonce, hdr.encmsg.tag,
 		    hdr.encmsg.ephpubkey, seckey->enckey);
+		if (rv != 0)
+			errx(1, "pub decryption failed");
 		reop_freeseckey(seckey);
 		reop_freepubkey(pubkey);
 	} else if (memcmp(hdr.alg, OLDENCALG, 2) == 0) {
@@ -1325,8 +1335,10 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 			errx(1, "unsupported key format");
 		if (memcmp(seckey->encalg, ENCKEYALG, 2) != 0)
 			errx(1, "unsupported key format");
-		pubdecryptraw(msg, msglen, hdr.oldencmsg.nonce, hdr.oldencmsg.tag,
+		rv = pubdecryptraw(msg, msglen, hdr.oldencmsg.nonce, hdr.oldencmsg.tag,
 		    pubkey->enckey, seckey->enckey);
+		if (rv != 0)
+			errx(1, "pub decryption failed");
 		reop_freeseckey(seckey);
 		reop_freepubkey(pubkey);
 	} else if (memcmp(hdr.alg, OLDEKCALG, 2) == 0) {
@@ -1338,8 +1350,10 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		if (memcmp(hdr.oldekcmsg.pubrandomid, seckey->randomid, RANDOMIDLEN) != 0)
 			goto fpfail;
 
-		pubdecryptraw(msg, msglen, hdr.oldekcmsg.nonce, hdr.oldekcmsg.tag,
+		rv = pubdecryptraw(msg, msglen, hdr.oldekcmsg.nonce, hdr.oldekcmsg.tag,
 		    hdr.oldekcmsg.pubkey, seckey->enckey);
+		if (rv != 0)
+			errx(1, "pub decryption failed");
 		reop_freeseckey(seckey);
 	} else {
 		goto fail;
