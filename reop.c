@@ -605,30 +605,27 @@ reop_getpubkey(const char *pubkeyfile, const char *ident)
 	if (!pubkeyfile && ident) {
 		if (findpubkey(ident, pubkey) == 0)
 			return pubkey;
-		free(pubkey);
-		return NULL;
+		goto fail;
 	}
 	char namebuf[1024];
 	if (!pubkeyfile && gethomefile("pubkey", namebuf, sizeof(namebuf)) == 0)
 		pubkeyfile = namebuf;
-	if (!pubkeyfile) {
-		free(pubkey);
-		return NULL;
-	}
+	if (!pubkeyfile)
+		goto fail;
 
 	uint64_t keydatalen;
 	char *keydata = readall(pubkeyfile, &keydatalen);
-	if (!keydata) {
-		free(pubkey);
-		return NULL;
-	}
+	if (!keydata)
+		goto fail;
 	int rv = parsekeydata(keydata, "PUBLIC KEY", pubkey, pubkeysize, pubkey->ident);
 	xfree(keydata, keydatalen);
-	if (rv != 0) {
-		free(pubkey);
-		return NULL;
-	}
+	if (rv != 0)
+		goto fail;
 	return pubkey;
+
+fail:
+	free(pubkey);
+	return NULL;
 }
 
 /*
@@ -654,30 +651,25 @@ reop_getseckey(const char *seckeyfile, const char *password)
 	char namebuf[1024];
 	if (!seckeyfile && gethomefile("seckey", namebuf, sizeof(namebuf)) == 0)
 		seckeyfile = namebuf;
-	if (!seckeyfile) {
-		free(seckey);
-		return NULL;
-	}
+	if (!seckeyfile)
+		goto fail;
 
 	uint64_t keydatalen;
 	char *keydata = readall(seckeyfile, &keydatalen);
-	if (!keydata) {
-		free(seckey);
-		return NULL;
-	}
-
+	if (!keydata)
+		goto fail;
 	int rv = parsekeydata(keydata, "SECRET KEY", seckey, seckeysize, seckey->ident);
 	xfree(keydata, keydatalen);
-	if (rv != 0) {
-		xfree(seckey, sizeof(*seckey));
-		return NULL;
-	}
+	if (rv != 0)
+		goto fail;
 	rv = decryptseckey(seckey, password);
-	if (rv != 0) {
-		xfree(seckey, sizeof(*seckey));
-		return NULL;
-	}
+	if (rv != 0)
+		goto fail;
 	return seckey;
+
+fail:
+	xfree(seckey, sizeof(*seckey));
+	return NULL;
 }
 
 /*
