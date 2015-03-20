@@ -27,6 +27,9 @@ typedef struct { int v; } kdf_allowstdin;
 typedef struct { int v; } kdf_confirm;
 typedef struct { int v; } opt_binary;
 
+/* init */
+void reop_init(void);
+
 /* generate a keypair */
 struct reop_keypair reop_generate(const char *ident);
 

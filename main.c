@@ -138,6 +138,8 @@ main(int argc, char **argv)
 	if (argc != 0)
 		usage(NULL);
 
+	reop_init();
+
 	switch (verb) {
 	case ENCRYPT:
 	case DECRYPT:

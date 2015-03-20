@@ -1443,3 +1443,9 @@ fail:
 fpfail:
 	errx(1, "key mismatch");
 }
+
+void
+reop_init(void)
+{
+	sodium_init();
+}
