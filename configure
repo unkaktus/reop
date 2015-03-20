@@ -15,7 +15,6 @@ doconfigure() {
 	printf 'CFLAGS=-std=c99 -Wall -O2 %s\n' "$cflags"
 	printf 'LDFLAGS=%s\n' "$libs"
 	printf 'OBJS=reop.o\n'
-	printf 'OBJS+=main.o\n'
 	# always include base64.c. testing for correct versions is too hard
 	printf 'OBJS+=other/base64.o\n'
 	if has features.h _GNU_SOURCE ; then
@@ -45,15 +44,29 @@ doconfigure() {
 		fi
 	fi
 
+	printf 'SOBJS:=${OBJS:o=so}\n'
+	printf 'OBJS+=main.o\n'
+	printf 'LIBREOP=libreop.so.%s\n' `cat shlib_version`
+	printf '\n'
+	printf 'all: reop ${LIBREOP}\n'
+	printf '\n'
+	printf '.SUFFIXES: .c .o .so\n'
 	printf '\n'
 	printf '.c.o:\n'
 	printf '\t${CC} ${CFLAGS} ${CPPFLAGS} -o $@ -c $<\n'
 	printf '\n'
+	printf '.c.so:\n'
+	printf '\t${CC} -fPIC ${CFLAGS} ${CPPFLAGS} -o $@ -c $<\n'
+	printf '\n'
 	printf 'reop: ${OBJS}\n'
 	printf '\t${CC} ${OBJS} -o reop ${LDFLAGS}\n'
 	printf '\n'
+	printf '${LIBREOP}: ${SOBJS}\n'
+	printf '\t${CC} -shared ${SOBJS} -o $@ ${LDFLAGS}\n'
+	printf '\n'
 	printf 'clean:\n'
 	printf '\trm -f ${OBJS} reop\n'
+	printf '\trm -f ${SOBJS} ${LIBREOP}\n'
 }
 
 doconfigure > Makefile
