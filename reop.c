@@ -143,27 +143,52 @@ const size_t pubkeysize = offsetof(struct reop_pubkey, ident);
 
 /* utility */
 static int
-xopen(const char *fname, int oflags, mode_t mode)
+xopen(const char *filename, int oflags, mode_t mode)
 {
 	struct stat sb;
 	int fd;
 
-	if (strcmp(fname, "-") == 0) {
+	if (strcmp(filename, "-") == 0) {
 		if ((oflags & O_WRONLY))
 			fd = dup(STDOUT_FILENO);
 		else
 			fd = dup(STDIN_FILENO);
 		if (fd == -1)
-			err(1, "dup failed");
+			return -2;
 	} else {
-		fd = open(fname, oflags, mode);
+		fd = open(filename, oflags, mode);
 		if (fd == -1)
-			err(1, "can't open %s for %s", fname,
-			    (oflags & O_WRONLY) ? "writing" : "reading");
+			return -1;
 	}
-	if (fstat(fd, &sb) == -1 || S_ISDIR(sb.st_mode))
-		errx(1, "not a valid file: %s", fname);
+	if (fstat(fd, &sb) == -1 || S_ISDIR(sb.st_mode)) {
+		close(fd);
+		return -3;
+	}
 	return fd;
+}
+
+static int
+xopenorfail(const char *filename, int oflags, mode_t mode)
+{
+	int fd = xopen(filename, oflags, mode);
+	if (fd >= 0)
+		return fd;
+	switch (fd) {
+	case -1:
+		err(1, "can't open %s for %s", filename,
+		    (oflags & O_WRONLY) ? "writing" : "reading");
+		break;
+	case -2:
+		err(1, "dup failed");
+		break;
+	case -3:
+		errx(1, "not a valid file: %s", filename);
+		break;
+	default:
+		errx(1, "can't open %s", filename);
+		break;
+	}
+	return -1;
 }
 
 static void *
@@ -353,7 +378,7 @@ readallorfail(const char *filename, uint8_t **msgp, uint64_t *msglenp)
 	case 0:
 		break;
 	case -1:
-		errx(1, "could not open %s", filename);
+		err(1, "could not open %s", filename);
 		break;
 	case -2:
 		errx(1, "%s is too large", filename);
@@ -839,7 +864,7 @@ generate(const char *pubkeyfile, const char *seckeyfile, const char *ident,
 	if (!seckeyfile)
 		errx(1, "no seckeyfile");
 
-	int fd = xopen(seckeyfile, O_CREAT|O_EXCL|O_NOFOLLOW|O_WRONLY, 0600);
+	int fd = xopenorfail(seckeyfile, O_CREAT|O_EXCL|O_NOFOLLOW|O_WRONLY, 0600);
 	const char *keydata = reop_encodeseckey(keypair.seckey, password);
 	writeall(fd, keydata, strlen(keydata), seckeyfile);
 	reop_freestr(keydata);
@@ -852,7 +877,7 @@ generate(const char *pubkeyfile, const char *seckeyfile, const char *ident,
 	if (!pubkeyfile)
 		errx(1, "no pubkeyfile");
 
-	fd = xopen(pubkeyfile, O_CREAT|O_EXCL|O_NOFOLLOW|O_WRONLY, 0666);
+	fd = xopenorfail(pubkeyfile, O_CREAT|O_EXCL|O_NOFOLLOW|O_WRONLY, 0666);
 	keydata = reop_encodepubkey(keypair.pubkey);
 	writeall(fd, keydata, strlen(keydata), pubkeyfile);
 	reop_freestr(keydata);
@@ -872,7 +897,7 @@ writesignedmsg(const char *filename, const struct reop_sig *sig,
 	char header[1024];
 	char b64[1024];
 
-	int fd = xopen(filename, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
+	int fd = xopenorfail(filename, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
 	snprintf(header, sizeof(header), "-----BEGIN REOP SIGNED MESSAGE-----\n");
 	writeall(fd, header, strlen(header), filename);
 	writeall(fd, msg, msglen, filename);
@@ -973,7 +998,7 @@ signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
 	if (embedded)
 		writesignedmsg(sigfile, sig, sig->ident, msg, msglen);
 	else {
-		int fd = xopen(sigfile, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
+		int fd = xopenorfail(sigfile, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
 		const char *sigdata = reop_encodesig(sig);
 		writeall(fd, sigdata, strlen(sigdata), sigfile);
 		reop_freestr(sigdata);
@@ -1094,7 +1119,7 @@ writeencfile(const char *filename, const void *hdr,
 		uint32_t identlen = strlen(ident);
 		identlen = htonl(identlen);
 
-		int fd = xopen(filename, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
+		int fd = xopenorfail(filename, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
 
 		writeall(fd, REOP_BINARY, 4, filename);
 		writeall(fd, hdr, hdrlen, filename);
@@ -1111,7 +1136,7 @@ writeencfile(const char *filename, const void *hdr,
 		if (reopb64_ntop(msg, msglen, b64data, b64len) == -1)
 			errx(1, "b64 encode failed");
 
-		int fd = xopen(filename, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
+		int fd = xopenorfail(filename, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
 		snprintf(header, sizeof(header), "-----BEGIN REOP ENCRYPTED MESSAGE-----\n");
 		writeall(fd, header, strlen(header), filename);
 		snprintf(header, sizeof(header), "ident:%s\n", ident);
@@ -1429,7 +1454,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 	} else {
 		goto fail;
 	}
-	int fd = xopen(msgfile, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
+	int fd = xopenorfail(msgfile, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
 	writeall(fd, msg, msglen, msgfile);
 	close(fd);
 	if (encdata)
