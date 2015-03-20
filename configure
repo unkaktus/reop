@@ -45,7 +45,7 @@ doconfigure() {
 	fi
 
 	printf 'SOBJS:=${OBJS:o=so}\n'
-	printf 'OBJS+=main.o\n'
+	printf 'OBJS=main.o ${OBJS}\n'
 	printf 'LIBREOP=libreop.so.%s\n' `cat shlib_version`
 	printf '\n'
 	printf 'all: reop ${LIBREOP}\n'
