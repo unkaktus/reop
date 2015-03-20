@@ -7,6 +7,7 @@ clean() {
 	rm -f mypub mysec yourpub yoursec
 	rm -f double.sig trip.txt warn.txt.enc warn.txt.sig danger.txt
 	rm -f error.log
+	rm -f thebigfile
 }
 
 clean
@@ -36,10 +37,15 @@ env REOP_PASSPHRASE=bananas ../reop -D -x warn.txt.enc -m danger.txt
 diff -u warn.txt danger.txt
 ../reop -Vq -p mypub -x warn.txt.sig
 ../reop -Vq -p yourpub -x warn.txt.sig 2> error.log || true
-diff -u expected.log error.log
+echo reop: verification failed: checked against wrong key | diff -u - error.log
 
 ../reop -Se -s yoursec -m warn.txt.sig -x double.sig
 ../reop -Vq -p yourpub -x double.sig
+
+# large files
+dd if=/dev/zero bs=1M count=1 seek=1400 of=thebigfile > /dev/null 2>&1
+env REOP_PASSPHRASE=apples ../reop -Eb -m thebigfile -x /dev/null 2> error.log || true
+echo reop: thebigfile is too large | diff -u - error.log
 
 echo C passed.
 
