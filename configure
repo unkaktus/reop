@@ -21,6 +21,9 @@ doconfigure() {
 	if has features.h _GNU_SOURCE ; then
 		printf 'CPPFLAGS+=-D_GNU_SOURCE\n'
 	fi
+	if has features.h _FILE_OFFSET_BITS ; then
+		printf 'CPPFLAGS+=-D_FILE_OFFSET_BITS=64\n'
+	fi
 	if ! has string.h strlcpy ; then
 		printf 'OBJS+=other/strlcpy.o\n'
 		printf 'CPPFLAGS+=-DNEED_STRLCPY\n'
