@@ -1,62 +1,69 @@
 package main
 
 import (
-	"github.com/dchest/bcrypt_pbkdf"
 	"bytes"
-	"golang.org/x/crypto/nacl/box"
-	"golang.org/x/crypto/nacl/secretbox"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"strings"
+
+	"github.com/dchest/bcrypt_pbkdf"
+	"github.com/howeyc/gopass"
+	"golang.org/x/crypto/nacl/box"
+	"golang.org/x/crypto/nacl/secretbox"
 )
 
+// Seckey is a secret (private) key.
 type Seckey struct {
-	sigalg [2]byte
-	encalg [2]byte
-	symalg [2]byte
-	kdfalg [2]byte
-	randomid [8]byte
+	sigalg    [2]byte
+	encalg    [2]byte
+	symalg    [2]byte
+	kdfalg    [2]byte
+	randomid  [8]byte
 	kdfrounds uint32
-	salt [16]byte
-	nonce [24]byte
-	tag [16]byte
-	sigkey [64]byte
-	enckey [32]byte
-	ident string
+	salt      [16]byte
+	nonce     [24]byte
+	tag       [16]byte
+	sigkey    [64]byte
+	enckey    [32]byte
+	ident     string
 }
 
+// Pubkey is a public key.
 type Pubkey struct {
-	sigalg [2]byte
-	encalg [2]byte
+	sigalg   [2]byte
+	encalg   [2]byte
 	randomid [8]byte
-	sigkey [32]byte
-	enckey [32]byte
-	ident string
+	sigkey   [32]byte
+	enckey   [32]byte
+	ident    string
 }
 
+// Encmsg is a public-key encrypted message.
 type Encmsg struct {
-	encalg [2]byte
+	encalg      [2]byte
 	secrandomid [8]byte
 	pubrandomid [8]byte
-	ephpubkey [32]byte
-	ephnonce [24]byte
-	ephtag [16]byte
-	nonce [24]byte
-	tag [16]byte
+	ephpubkey   [32]byte
+	ephnonce    [24]byte
+	ephtag      [16]byte
+	nonce       [24]byte
+	tag         [16]byte
 }
 
+// Symmsg is a symmetrically encrypted message.
 type Symmsg struct {
-	symalg [2]byte
-	kdfalg [2]byte
+	symalg    [2]byte
+	kdfalg    [2]byte
 	kdfrounds uint32
-	salt [16]byte
-	nonce [24]byte
-	tag [16]byte
+	salt      [16]byte
+	nonce     [24]byte
+	tag       [16]byte
 }
 
 func wraplines(s string) string {
@@ -240,28 +247,147 @@ func encryptSymmsg(password string, msg []byte) string {
 		"-----END REOP ENCRYPTED MESSAGE-----\n"
 }
 
+func usage(message string) {
+	fmt.Fprintf(os.Stderr, message)
+	fmt.Fprintf(os.Stderr, "\n")
+	flag.PrintDefaults()
+	os.Exit(1)
+}
+
+func nyi(feature string) {
+	fmt.Fprintf(os.Stderr, feature)
+	fmt.Fprintf(os.Stderr, " is not yet implemented\n")
+	os.Exit(1)
+}
+
 func main() {
-	if len(os.Args) == 4 {
-		seckey := readSeckey(os.Args[1])
-		pubkey := readPubkey(os.Args[2])
+	// uses the flag package to parse flags
+	// TODO allow options to be passed as "reop -Seqm message.txt" which isn't possible with flag
 
-		msg, err := ioutil.ReadFile(os.Args[3])
-		if err != nil {
-			log.Fatal(err)
-		}
+	// verbs
+	var decrypt = flag.Bool("D", false, "Decrypt a message.")
+	var encrypt = flag.Bool("E", false, "Encrypt a message.")
+	var generate = flag.Bool("G", false, "Generate a new key pair.")
+	var sign = flag.Bool("S", false, "Sign a message.")
+	var verify = flag.Bool("V", false, "Verify a signed message.")
 
-		s := encryptMsg(seckey, pubkey, msg)
-		fmt.Println(s)
-	} else if len(os.Args) == 3 {
-		password := os.Args[1]
-		msg, err := ioutil.ReadFile(os.Args[2])
-		if err != nil {
-			log.Fatal(err)
+	// formats
+	var v1compat = flag.Bool("1", false, "Use the deprecated version 1 format.")
+	var binary = flag.Bool("b", false, "Store cyphertext as binary instead of base64.")
+	var embedded = flag.Bool("e", false, "Store signature alongside message.")
+
+	// options
+	var nopasswd = flag.Bool("n", false, "Generate a key with no password.")
+	var quiet = flag.Bool("q", false, "Suppress informational output.")
+
+	// parameters
+	var ident = flag.String("i", "", "Identity tag to generate or search for")
+	var msgfile = flag.String("m", "", "Message file")
+	var pubkeyfile = flag.String("p", "", "Public key file")
+	var seckeyfile = flag.String("s", "", "Secret key file")
+	var xfile = flag.String("x", "", "Signature when signing/verifying; ciphertext when encrypting")
+
+	flag.Parse()
+
+	verb := "NONE"
+	switch {
+	case *decrypt:
+		verb = "DECRYPT"
+		*decrypt = false
+	case *encrypt:
+		verb = "ENCRYPT"
+		*encrypt = false
+	case *generate:
+		verb = "GENERATE"
+		*generate = false
+	case *sign:
+		verb = "SIGN"
+		*sign = false
+	case *verify:
+		verb = "VERIFY"
+		*verify = false
+	}
+
+	if *decrypt || *encrypt || *generate || *sign || *verify {
+		usage("Don't give two commands!")
+	}
+
+	switch "-" {
+	case *msgfile, *xfile:
+		nyi("Passing - to -m/-x to use stdin/stdout")
+	}
+
+	switch verb {
+	case "ENCRYPT", "DECRYPT":
+		if *msgfile == "" {
+			usage("Specify a message")
 		}
-		s := encryptSymmsg(password, msg)
-		fmt.Println(s)
+		if *xfile == "" {
+			if *msgfile == "-" {
+				usage("Can't read from stdin and write to stdout")
+			}
+			*xfile = *msgfile + ".enc"
+		}
+	case "SIGN", "VERIFY":
+		fmt.Println("In the future, this will check some stuff")
+	}
+
+	switch verb {
+	case "DECRYPT":
+		nyi("Decryption")
+	case "ENCRYPT":
+		if *seckeyfile != "" && (*pubkeyfile == "" && *ident == "") {
+			usage("Specify a public key or identity name")
+		}
+		if *binary || *v1compat {
+			nyi("Encryption formatting")
+		}
+		if *ident != "" {
+			nyi("Finding keys in ~/.reop")
+		}
+		if *pubkeyfile != "" {
+			seckey := readSeckey(*seckeyfile)
+			pubkey := readPubkey(*pubkeyfile)
+
+			msg, err := ioutil.ReadFile(*msgfile)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			s := encryptMsg(seckey, pubkey, msg)
+			ioutil.WriteFile(*xfile, []byte(s), os.FileMode(0611))
+		} else {
+			password := os.Getenv("REOP_PASSPHRASE")
+			if password == "" {
+				fmt.Print("passphrase: ")
+				password = string(gopass.GetPasswd())
+				fmt.Print("confirm passphrase: ")
+				confirmed := string(gopass.GetPasswd())
+				if password != confirmed {
+					fmt.Fprintf(os.Stderr, "Passphrases didn't match!\n")
+					os.Exit(1)
+				}
+			}
+			msg, err := ioutil.ReadFile(*msgfile)
+			if err != nil {
+				log.Fatal(err)
+			}
+			s := encryptSymmsg(string(password), msg)
+			ioutil.WriteFile(*xfile, []byte(s), os.FileMode(0611))
+		}
+	case "GENERATE":
+		if !*quiet {
+			fmt.Println("Skipping password: ", *nopasswd)
+		}
+		nyi("Key generation")
+	case "SIGN":
+		if !*quiet {
+			fmt.Println("Embedding message w/ signature: ", *embedded)
+		}
+		nyi("Message signing")
+	case "VERIFY":
+		nyi("Message verification")
 	}
 }
 
-
-
+// TODO securely erase everything at the end
