@@ -265,13 +265,13 @@ func decryptMsg(seckeyfile, pubkeyfile string, ciphertext []byte) string {
 	case "eC":
 		//seckey := readSeckey(seckeyfile)
 		//pubkey := readPubkey(pubkeyfile)
-		nyi("Public-key decryption")
+		nyi("Public-key decryption with identity " + ident)
 	case "CS":
 		nyi("Old public-key algorithm")
 	case "eS":
 		nyi("Old symmetric algorithm")
 	}
-	return string(msgraw) + ident
+	return ""
 }
 
 func encryptMsg(seckey *Seckey, pubkey *Pubkey, msg []byte) string {
