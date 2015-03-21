@@ -224,7 +224,7 @@ func decryptMsg(seckeyfile, pubkeyfile string, ciphertext []byte) string {
 			fmt.Fprintln(os.Stderr, "Badly formatted message!")
 			os.Exit(1)
 		}
-		msglen = ((end-begin)/4 - 1) * 3
+		msglen = (end - begin - 1) / 4 * 3
 		msgraw = b64pton(ciphertext[begin:end], msglen)
 		for msgraw[len(msgraw)-1] == 0 {
 			msgraw = msgraw[:len(msgraw)-1]

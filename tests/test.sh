@@ -63,15 +63,13 @@ if [ -x ../go/reop ] ; then
 	env REOP_PASSPHRASE=gorilla ../go/reop -E -m warn.txt -x warn.txt.enc
 	env REOP_PASSPHRASE=gorilla ../reop -D -x warn.txt.enc -m danger.txt
 	diff -u danger.txt warn.txt
+	echo Go encryption passed.
 	
 	# test Go decryption
-	../reop -E -s mysec -p yourpub -m warn.txt -x warn.txt.enc
-	../go/reop -D -s yoursec -p mypub -x warn.txt.enc -m danger.txt
-	diff -u danger.txt warn.txt
 	env REOP_PASSPHRASE=gorilla ../reop -E -m warn.txt -x warn.txt.enc
 	env REOP_PASSPHRASE=gorilla ../go/reop -D -x warn.txt.enc -m danger.txt
 	diff -u danger.txt warn.txt
-	echo Go passed.
+	echo Go decryption passed.
 else
 	echo Skipping Go tests.
 fi
