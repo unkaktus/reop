@@ -225,7 +225,6 @@ func decryptMsg(seckeyfile, pubkeyfile string, ciphertext []byte) string {
 			os.Exit(1)
 		}
 		msglen = ((end-begin)/4 - 1) * 3
-		fmt.Println(string(ciphertext[begin:end]))
 		msgraw = b64pton(ciphertext[begin:end], msglen)
 		for msgraw[len(msgraw)-1] == 0 {
 			msgraw = msgraw[:len(msgraw)-1]
@@ -256,7 +255,6 @@ func decryptMsg(seckeyfile, pubkeyfile string, ciphertext []byte) string {
 		var symkey [32]byte
 		copy(symkey[:], key)
 		raw := append(msg.tag[:], msgraw...)
-		fmt.Println(wraplines(base64.StdEncoding.EncodeToString(raw)))
 		var dec []byte
 		dec, worked := secretbox.Open(nil, raw, &msg.nonce, &symkey)
 		if !worked {
@@ -333,7 +331,6 @@ func encryptSymmsg(password string, msg []byte) string {
 	copy(symkey[:], key)
 
 	enc := secretbox.Seal(nil, msg, &symmsg.nonce, &symkey)
-	fmt.Println(wraplines(base64.StdEncoding.EncodeToString(enc)))
 	copy(symmsg.tag[:], enc[0:16])
 	enc = enc[16:]
 
