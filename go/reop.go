@@ -73,6 +73,23 @@ func wraplines(s string) string {
 	return s
 }
 
+func readUint32(data []byte) (ret uint32) {
+	buf := bytes.NewBuffer(data)
+	binary.Read(buf, binary.BigEndian, &ret)
+	return
+}
+
+func b64pton(data []byte, length int) []byte {
+	result := make([]byte, length)
+	n, err := base64.StdEncoding.Decode(result, data)
+	if err != nil && n != length {
+		fmt.Fprintln(os.Stderr, "Base64 decoding failed.")
+		fmt.Println("err:", err, "n:", n)
+		log.Fatal(err)
+	}
+	return result
+}
+
 func encodeSeckey(seckey *Seckey) string {
 	var buf bytes.Buffer
 	buf.Write(seckey.sigalg[:])
@@ -163,6 +180,98 @@ func readPubkey(pubkeyfile string) *Pubkey {
 	}
 	pubkey := decodePubkey(string(pubkeydata))
 	return pubkey
+}
+
+func readIdent(ciphertext []byte) (int, string) {
+	newlineIndex := bytes.IndexByte(ciphertext, '\n')
+	thisLine := string(ciphertext[:newlineIndex])
+	var result string
+	fmt.Sscanf(thisLine, "ident:%s", &result)
+	return newlineIndex + 1, result
+}
+
+func decryptMsg(seckeyfile, pubkeyfile string, ciphertext []byte) string {
+	var ident string
+	var msglen int
+	var msgraw []byte
+	var hdr []byte
+	if ciphertext[0] == 'R' && ciphertext[1] == 'B' && ciphertext[2] == 'F' && ciphertext[3] == '\u0000' {
+		nyi("Binary decryption")
+	} else {
+		// in the C, these are pointers to halfway through ciphertext
+		// that's not fun
+		var begin int
+		var end int
+		var beginmsg = []byte("-----BEGIN REOP ENCRYPTED MESSAGE-----\n")
+		var begindata = []byte("-----BEGIN REOP ENCRYPTED MESSAGE DATA-----\n")
+		var endmsg = []byte("-----END REOP ENCRYPTED MESSAGE-----\n")
+		if bytes.Index(ciphertext, beginmsg) != 0 {
+			fmt.Fprintln(os.Stderr, "Badly formatted message!")
+			os.Exit(1)
+		}
+		begin, ident = readIdent(ciphertext[len(beginmsg):])
+		begin = begin + len(beginmsg)
+		end = begin + bytes.Index(ciphertext[begin:], begindata)
+		if end == -1 {
+			fmt.Fprintln(os.Stderr, "Badly formatted message!")
+			os.Exit(1)
+		}
+		// this was nasty to figure out; it's a sizeof() a union with several structs
+		hdr = b64pton(ciphertext[begin:end], 128)
+		begin = end + len(begindata)
+		end = begin + bytes.Index(ciphertext[begin:], endmsg)
+		if end == -1 {
+			fmt.Fprintln(os.Stderr, "Badly formatted message!")
+			os.Exit(1)
+		}
+		msglen = (end - begin - 1) / 4 * 3
+		msgraw = b64pton(ciphertext[begin:end], msglen)
+		for msgraw[len(msgraw)-1] == 0 {
+			msgraw = msgraw[:len(msgraw)-1]
+		}
+	}
+
+	algorithm := string(hdr[:2])
+
+	switch algorithm {
+	case "SP":
+		msg := new(Symmsg)
+		copy(msg.symalg[:], hdr[0:2])
+		copy(msg.kdfalg[:], hdr[2:4])
+		msg.kdfrounds = readUint32(hdr[4:8])
+		copy(msg.salt[:], hdr[8:24])
+		copy(msg.nonce[:], hdr[24:48])
+		copy(msg.tag[:], hdr[48:64])
+		if string(msg.kdfalg[:]) != "BK" {
+			fmt.Fprintln(os.Stderr, "unsupported KDF")
+			os.Exit(1)
+		}
+		password := os.Getenv("REOP_PASSPHRASE")
+		if password == "" {
+			fmt.Print("passphrase: ")
+			password = string(gopass.GetPasswd())
+		}
+		key, _ := bcrypt_pbkdf.Key([]byte(password), msg.salt[:], int(msg.kdfrounds), 32)
+		var symkey [32]byte
+		copy(symkey[:], key)
+		raw := append(msg.tag[:], msgraw...)
+		var dec []byte
+		dec, worked := secretbox.Open(nil, raw, &msg.nonce, &symkey)
+		if !worked {
+			fmt.Fprintln(os.Stderr, "Decryption failed!")
+			os.Exit(1)
+		}
+		return string(dec)
+	case "eC":
+		//seckey := readSeckey(seckeyfile)
+		//pubkey := readPubkey(pubkeyfile)
+		nyi("Public-key decryption with identity " + ident)
+	case "CS":
+		nyi("Old public-key algorithm")
+	case "eS":
+		nyi("Old symmetric algorithm")
+	}
+	return ""
 }
 
 func encryptMsg(seckey *Seckey, pubkey *Pubkey, msg []byte) string {
@@ -262,7 +371,7 @@ func nyi(feature string) {
 
 func main() {
 	// uses the flag package to parse flags
-	// TODO allow options to be passed as "reop -Seqm message.txt" which isn't possible with flag
+	// XXX allow options to be passed as "reop -Seqm message.txt" which isn't possible with flag
 
 	// verbs
 	var decrypt = flag.Bool("D", false, "Decrypt a message.")
@@ -285,7 +394,7 @@ func main() {
 	var msgfile = flag.String("m", "", "Message file")
 	var pubkeyfile = flag.String("p", "", "Public key file")
 	var seckeyfile = flag.String("s", "", "Secret key file")
-	var xfile = flag.String("x", "", "Signature when signing/verifying; ciphertext when encrypting")
+	var xfile = flag.String("x", "", "Signature on -S/-V; ciphertext on -E/-D")
 
 	flag.Parse()
 
@@ -306,6 +415,10 @@ func main() {
 	case *verify:
 		verb = "VERIFY"
 		*verify = false
+	}
+
+	if verb == "NONE" {
+		usage("Give a command!")
 	}
 
 	if *decrypt || *encrypt || *generate || *sign || *verify {
@@ -334,7 +447,13 @@ func main() {
 
 	switch verb {
 	case "DECRYPT":
-		nyi("Decryption")
+		ciphertext, err := ioutil.ReadFile(*xfile)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		s := decryptMsg(*seckeyfile, *pubkeyfile, ciphertext)
+		ioutil.WriteFile(*msgfile, []byte(s), os.FileMode(0611))
 	case "ENCRYPT":
 		if *seckeyfile != "" && (*pubkeyfile == "" && *ident == "") {
 			usage("Specify a public key or identity name")
@@ -390,4 +509,4 @@ func main() {
 	}
 }
 
-// TODO securely erase everything at the end
+// XXX securely erase everything at the end
