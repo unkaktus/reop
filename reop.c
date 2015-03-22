@@ -1333,11 +1333,12 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		memcpy(&identlen, ptr, sizeof(identlen));
 		ptr += sizeof(identlen);
 		identlen = ntohl(identlen);
-		if (identlen > sizeof(ident))
+		if (identlen >= sizeof(ident))
 			goto fail;
 		if (ptr + identlen > endptr)
 			goto fail;
 		memcpy(ident, ptr, identlen);
+		ident[identlen] = '\0';
 		ptr += identlen;
 		msg = ptr;
 		msglen = endptr - ptr;
