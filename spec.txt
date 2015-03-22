@@ -55,7 +55,7 @@ The remainder of the line is 64 bytes of ASCII or possibly UTF-8 text.
 The identifier is not interpreted by reop, but should be human friendly.
 
 -----BEGIN REOP SECRET KEY-----
-ident:identifier up to 64 bytes
+ident:identifier up to 63 bytes
 base64 encoded data, ideally wrapped to 76 char lines
 -----END REOP SECRET KEY-----
 
@@ -132,4 +132,20 @@ base64 header info
 -----BEGIN REOP ENCRYPTED MESSAGE DATA-----
 base64 message data
 -----END REOP ENCRYPTED MESSAGE-----
+
+Because all encrypted messages, of any type, have a similar structure, it is
+first necessay to decode the base64 header in order to inspect the first two
+bytes.
+
+Binary messages lack ASCII guard lines, and instead begin with the four byte
+signature "RBF\0". This is followed by the header info, as above. Then the
+ident length, then the ident. Then the message.
+
+	uint8_t rbfsig[4]	"RBF\0"
+	uint8_t symalg[2]	SP or eC (as above)
+	more fields		varying as above
+	uint32_t identlen	network byte order
+	char ident[]		length as per above, no nul
+	uint8_t msg[]		the rest of the message, encrypted
+
 
