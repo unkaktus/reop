@@ -56,12 +56,20 @@ else
 fi
 
 if [ -x ../go/reop ] ; then
-	../go/reop mysec yourpub warn.txt | ../reop -D -s yoursec -p mypub -x - -m - > danger.txt
+	# test Go encryption
+	../go/reop -E -s mysec -p yourpub -m warn.txt -x warn.txt.enc
+	../reop -D -s yoursec -p mypub -x warn.txt.enc -m danger.txt
 	diff -u danger.txt warn.txt
-	../go/reop gorilla  warn.txt > warn.txt.enc
+	env REOP_PASSPHRASE=gorilla ../go/reop -E -m warn.txt -x warn.txt.enc
 	env REOP_PASSPHRASE=gorilla ../reop -D -x warn.txt.enc -m danger.txt
 	diff -u danger.txt warn.txt
-	echo Go passed.
+	echo Go encryption passed.
+	
+	# test Go decryption
+	env REOP_PASSPHRASE=gorilla ../reop -E -m warn.txt -x warn.txt.enc
+	env REOP_PASSPHRASE=gorilla ../go/reop -D -x warn.txt.enc -m danger.txt
+	diff -u danger.txt warn.txt
+	echo Go decryption passed.
 else
 	echo Skipping Go tests.
 fi

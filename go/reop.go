@@ -16,62 +16,69 @@
 package main
 
 import (
-	"github.com/dchest/bcrypt_pbkdf"
 	"bytes"
-	"golang.org/x/crypto/nacl/box"
-	"golang.org/x/crypto/nacl/secretbox"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
 	"strings"
+
+	"github.com/dchest/bcrypt_pbkdf"
+	"github.com/howeyc/gopass"
+	"golang.org/x/crypto/nacl/box"
+	"golang.org/x/crypto/nacl/secretbox"
 )
 
+// Seckey is a secret (private) key.
 type Seckey struct {
-	sigalg [2]byte
-	encalg [2]byte
-	symalg [2]byte
-	kdfalg [2]byte
-	randomid [8]byte
+	sigalg    [2]byte
+	encalg    [2]byte
+	symalg    [2]byte
+	kdfalg    [2]byte
+	randomid  [8]byte
 	kdfrounds uint32
-	salt [16]byte
-	nonce [24]byte
-	tag [16]byte
-	sigkey [64]byte
-	enckey [32]byte
-	ident string
+	salt      [16]byte
+	nonce     [24]byte
+	tag       [16]byte
+	sigkey    [64]byte
+	enckey    [32]byte
+	ident     string
 }
 
+// Pubkey is a public key.
 type Pubkey struct {
-	sigalg [2]byte
-	encalg [2]byte
+	sigalg   [2]byte
+	encalg   [2]byte
 	randomid [8]byte
-	sigkey [32]byte
-	enckey [32]byte
-	ident string
+	sigkey   [32]byte
+	enckey   [32]byte
+	ident    string
 }
 
+// Encmsg is a public-key encrypted message.
 type Encmsg struct {
-	encalg [2]byte
+	encalg      [2]byte
 	secrandomid [8]byte
 	pubrandomid [8]byte
-	ephpubkey [32]byte
-	ephnonce [24]byte
-	ephtag [16]byte
-	nonce [24]byte
-	tag [16]byte
+	ephpubkey   [32]byte
+	ephnonce    [24]byte
+	ephtag      [16]byte
+	nonce       [24]byte
+	tag         [16]byte
 }
 
+// Symmsg is a symmetrically encrypted message.
 type Symmsg struct {
-	symalg [2]byte
-	kdfalg [2]byte
+	symalg    [2]byte
+	kdfalg    [2]byte
 	kdfrounds uint32
-	salt [16]byte
-	nonce [24]byte
-	tag [16]byte
+	salt      [16]byte
+	nonce     [24]byte
+	tag       [16]byte
 }
 
 func wraplines(s string) string {
@@ -79,6 +86,23 @@ func wraplines(s string) string {
 		s = s[0:i] + "\n" + s[i:]
 	}
 	return s
+}
+
+func readUint32(data []byte) (ret uint32) {
+	buf := bytes.NewBuffer(data)
+	binary.Read(buf, binary.BigEndian, &ret)
+	return
+}
+
+func b64pton(data []byte, length int) []byte {
+	result := make([]byte, length)
+	n, err := base64.StdEncoding.Decode(result, data)
+	if err != nil && n != length {
+		fmt.Fprintln(os.Stderr, "Base64 decoding failed.")
+		fmt.Println("err:", err, "n:", n)
+		log.Fatal(err)
+	}
+	return result
 }
 
 func encodeSeckey(seckey *Seckey) string {
@@ -173,6 +197,98 @@ func readPubkey(pubkeyfile string) *Pubkey {
 	return pubkey
 }
 
+func readIdent(ciphertext []byte) (int, string) {
+	newlineIndex := bytes.IndexByte(ciphertext, '\n')
+	thisLine := string(ciphertext[:newlineIndex])
+	var result string
+	fmt.Sscanf(thisLine, "ident:%s", &result)
+	return newlineIndex + 1, result
+}
+
+func decryptMsg(seckeyfile, pubkeyfile string, ciphertext []byte) string {
+	var ident string
+	var msglen int
+	var msgraw []byte
+	var hdr []byte
+	if ciphertext[0] == 'R' && ciphertext[1] == 'B' && ciphertext[2] == 'F' && ciphertext[3] == '\u0000' {
+		nyi("Binary decryption")
+	} else {
+		// in the C, these are pointers to halfway through ciphertext
+		// that's not fun
+		var begin int
+		var end int
+		var beginmsg = []byte("-----BEGIN REOP ENCRYPTED MESSAGE-----\n")
+		var begindata = []byte("-----BEGIN REOP ENCRYPTED MESSAGE DATA-----\n")
+		var endmsg = []byte("-----END REOP ENCRYPTED MESSAGE-----\n")
+		if bytes.Index(ciphertext, beginmsg) != 0 {
+			fmt.Fprintln(os.Stderr, "Badly formatted message!")
+			os.Exit(1)
+		}
+		begin, ident = readIdent(ciphertext[len(beginmsg):])
+		begin = begin + len(beginmsg)
+		end = begin + bytes.Index(ciphertext[begin:], begindata)
+		if end == -1 {
+			fmt.Fprintln(os.Stderr, "Badly formatted message!")
+			os.Exit(1)
+		}
+		// this was nasty to figure out; it's a sizeof() a union with several structs
+		hdr = b64pton(ciphertext[begin:end], 128)
+		begin = end + len(begindata)
+		end = begin + bytes.Index(ciphertext[begin:], endmsg)
+		if end == -1 {
+			fmt.Fprintln(os.Stderr, "Badly formatted message!")
+			os.Exit(1)
+		}
+		msglen = (end - begin - 1) / 4 * 3
+		msgraw = b64pton(ciphertext[begin:end], msglen)
+		for msgraw[len(msgraw)-1] == 0 {
+			msgraw = msgraw[:len(msgraw)-1]
+		}
+	}
+
+	algorithm := string(hdr[:2])
+
+	switch algorithm {
+	case "SP":
+		msg := new(Symmsg)
+		copy(msg.symalg[:], hdr[0:2])
+		copy(msg.kdfalg[:], hdr[2:4])
+		msg.kdfrounds = readUint32(hdr[4:8])
+		copy(msg.salt[:], hdr[8:24])
+		copy(msg.nonce[:], hdr[24:48])
+		copy(msg.tag[:], hdr[48:64])
+		if string(msg.kdfalg[:]) != "BK" {
+			fmt.Fprintln(os.Stderr, "unsupported KDF")
+			os.Exit(1)
+		}
+		password := os.Getenv("REOP_PASSPHRASE")
+		if password == "" {
+			fmt.Print("passphrase: ")
+			password = string(gopass.GetPasswd())
+		}
+		key, _ := bcrypt_pbkdf.Key([]byte(password), msg.salt[:], int(msg.kdfrounds), 32)
+		var symkey [32]byte
+		copy(symkey[:], key)
+		raw := append(msg.tag[:], msgraw...)
+		var dec []byte
+		dec, worked := secretbox.Open(nil, raw, &msg.nonce, &symkey)
+		if !worked {
+			fmt.Fprintln(os.Stderr, "Decryption failed!")
+			os.Exit(1)
+		}
+		return string(dec)
+	case "eC":
+		//seckey := readSeckey(seckeyfile)
+		//pubkey := readPubkey(pubkeyfile)
+		nyi("Public-key decryption with identity " + ident)
+	case "CS":
+		nyi("Old public-key algorithm")
+	case "eS":
+		nyi("Old symmetric algorithm")
+	}
+	return ""
+}
+
 func encryptMsg(seckey *Seckey, pubkey *Pubkey, msg []byte) string {
 	encmsg := new(Encmsg)
 	encmsg.encalg[0] = 'e'
@@ -255,28 +371,157 @@ func encryptSymmsg(password string, msg []byte) string {
 		"-----END REOP ENCRYPTED MESSAGE-----\n"
 }
 
+func usage(message string) {
+	fmt.Fprintf(os.Stderr, message)
+	fmt.Fprintf(os.Stderr, "\n")
+	flag.PrintDefaults()
+	os.Exit(1)
+}
+
+func nyi(feature string) {
+	fmt.Fprintf(os.Stderr, feature)
+	fmt.Fprintf(os.Stderr, " is not yet implemented\n")
+	os.Exit(1)
+}
+
 func main() {
-	if len(os.Args) == 4 {
-		seckey := readSeckey(os.Args[1])
-		pubkey := readPubkey(os.Args[2])
+	// uses the flag package to parse flags
+	// XXX allow options to be passed as "reop -Seqm message.txt" which isn't possible with flag
 
-		msg, err := ioutil.ReadFile(os.Args[3])
+	// verbs
+	var decrypt = flag.Bool("D", false, "Decrypt a message.")
+	var encrypt = flag.Bool("E", false, "Encrypt a message.")
+	var generate = flag.Bool("G", false, "Generate a new key pair.")
+	var sign = flag.Bool("S", false, "Sign a message.")
+	var verify = flag.Bool("V", false, "Verify a signed message.")
+
+	// formats
+	var v1compat = flag.Bool("1", false, "Use the deprecated version 1 format.")
+	var binary = flag.Bool("b", false, "Store cyphertext as binary instead of base64.")
+	var embedded = flag.Bool("e", false, "Store signature alongside message.")
+
+	// options
+	var nopasswd = flag.Bool("n", false, "Generate a key with no password.")
+	var quiet = flag.Bool("q", false, "Suppress informational output.")
+
+	// parameters
+	var ident = flag.String("i", "", "Identity tag to generate or search for")
+	var msgfile = flag.String("m", "", "Message file")
+	var pubkeyfile = flag.String("p", "", "Public key file")
+	var seckeyfile = flag.String("s", "", "Secret key file")
+	var xfile = flag.String("x", "", "Signature on -S/-V; ciphertext on -E/-D")
+
+	flag.Parse()
+
+	verb := "NONE"
+	switch {
+	case *decrypt:
+		verb = "DECRYPT"
+		*decrypt = false
+	case *encrypt:
+		verb = "ENCRYPT"
+		*encrypt = false
+	case *generate:
+		verb = "GENERATE"
+		*generate = false
+	case *sign:
+		verb = "SIGN"
+		*sign = false
+	case *verify:
+		verb = "VERIFY"
+		*verify = false
+	}
+
+	if verb == "NONE" {
+		usage("Give a command!")
+	}
+
+	if *decrypt || *encrypt || *generate || *sign || *verify {
+		usage("Don't give two commands!")
+	}
+
+	switch "-" {
+	case *msgfile, *xfile:
+		nyi("Passing - to -m/-x to use stdin/stdout")
+	}
+
+	switch verb {
+	case "ENCRYPT", "DECRYPT":
+		if *msgfile == "" {
+			usage("Specify a message")
+		}
+		if *xfile == "" {
+			if *msgfile == "-" {
+				usage("Can't read from stdin and write to stdout")
+			}
+			*xfile = *msgfile + ".enc"
+		}
+	case "SIGN", "VERIFY":
+		fmt.Println("In the future, this will check some stuff")
+	}
+
+	switch verb {
+	case "DECRYPT":
+		ciphertext, err := ioutil.ReadFile(*xfile)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		s := encryptMsg(seckey, pubkey, msg)
-		fmt.Println(s)
-	} else if len(os.Args) == 3 {
-		password := os.Args[1]
-		msg, err := ioutil.ReadFile(os.Args[2])
-		if err != nil {
-			log.Fatal(err)
+		s := decryptMsg(*seckeyfile, *pubkeyfile, ciphertext)
+		ioutil.WriteFile(*msgfile, []byte(s), os.FileMode(0611))
+	case "ENCRYPT":
+		if *seckeyfile != "" && (*pubkeyfile == "" && *ident == "") {
+			usage("Specify a public key or identity name")
 		}
-		s := encryptSymmsg(password, msg)
-		fmt.Println(s)
+		if *binary || *v1compat {
+			nyi("Encryption formatting")
+		}
+		if *ident != "" {
+			nyi("Finding keys in ~/.reop")
+		}
+		if *pubkeyfile != "" {
+			seckey := readSeckey(*seckeyfile)
+			pubkey := readPubkey(*pubkeyfile)
+
+			msg, err := ioutil.ReadFile(*msgfile)
+			if err != nil {
+				log.Fatal(err)
+			}
+
+			s := encryptMsg(seckey, pubkey, msg)
+			ioutil.WriteFile(*xfile, []byte(s), os.FileMode(0611))
+		} else {
+			password := os.Getenv("REOP_PASSPHRASE")
+			if password == "" {
+				fmt.Print("passphrase: ")
+				password = string(gopass.GetPasswd())
+				fmt.Print("confirm passphrase: ")
+				confirmed := string(gopass.GetPasswd())
+				if password != confirmed {
+					fmt.Fprintf(os.Stderr, "Passphrases didn't match!\n")
+					os.Exit(1)
+				}
+			}
+			msg, err := ioutil.ReadFile(*msgfile)
+			if err != nil {
+				log.Fatal(err)
+			}
+			s := encryptSymmsg(string(password), msg)
+			ioutil.WriteFile(*xfile, []byte(s), os.FileMode(0611))
+		}
+	case "GENERATE":
+		if !*quiet {
+			fmt.Println("Skipping password: ", *nopasswd)
+		}
+		nyi("Key generation")
+	case "SIGN":
+		if !*quiet {
+			fmt.Println("Embedding message w/ signature: ", *embedded)
+		}
+		nyi("Message signing")
+	case "VERIFY":
+		nyi("Message verification")
 	}
 }
 
-
-
+// XXX securely erase everything at the end
