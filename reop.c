@@ -1296,7 +1296,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 	uint8_t *encdata;
 	readallorfail(encfile, &encdata, &encdatalen);
 
-	if (encdatalen > 6 && memcmp(encdata, REOP_BINARY, 4) == 0) {
+	if (encdatalen >= 6 && memcmp(encdata, REOP_BINARY, 4) == 0) {
 		uint8_t *ptr = encdata + 4;
 		uint8_t *endptr = encdata + encdatalen;
 		uint32_t identlen;
