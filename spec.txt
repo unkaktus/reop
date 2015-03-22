@@ -117,6 +117,7 @@ Symmetric encrypted messages: (password protected)
 	uint8_t salt[16]	for KDF
 	uint8_t nonce[24]	random nonce for cipher
 	uint8_t tag[16]		auth tag to verify decrypt
+(64 bytes total)
 
 Symmetric encryption is conceptually simpler. Generate a random salt for
 the KDF. Generate a key from the password using the KDF. Encrypt. (Not shown

@@ -210,8 +210,23 @@ func decryptMsg(seckeyfile, pubkeyfile string, ciphertext []byte) string {
 	var msglen int
 	var msgraw []byte
 	var hdr []byte
-	if ciphertext[0] == 'R' && ciphertext[1] == 'B' && ciphertext[2] == 'F' && ciphertext[3] == '\u0000' {
-		nyi("Binary decryption")
+	if len(ciphertext) >= 6 && string(ciphertext[0:4]) == "RBF\u0000" {
+		algorithm := string(ciphertext[4:6])
+		switch algorithm {
+		case "SP":
+			if len(ciphertext) <= 68 {
+				fmt.Fprintln(os.Stderr, "Badly formatted message!")
+				os.Exit(1)
+			}
+			hdr = ciphertext[4:68]
+			ciphertext = ciphertext[68:]
+			break
+		default:
+			nyi("Binary decryption")
+		}
+		identlen :=  readUint32(ciphertext[0:4])
+		ident = string(ciphertext[4:4 + identlen])
+		msgraw = ciphertext[4 + identlen:]
 	} else {
 		// in the C, these are pointers to halfway through ciphertext
 		// that's not fun
