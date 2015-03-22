@@ -1348,7 +1348,6 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		const char *begindata = "-----BEGIN REOP ENCRYPTED MESSAGE DATA-----\n";
 		const char *endmsg = "-----END REOP ENCRYPTED MESSAGE-----\n";
 
-
 		if (strncmp(encdata, beginmsg, strlen(beginmsg)) != 0)
 			goto fail;
 		begin = readident(encdata + strlen(beginmsg), ident);
@@ -1458,6 +1457,12 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 	int fd = xopenorfail(msgfile, O_CREAT|O_TRUNC|O_NOFOLLOW|O_WRONLY, 0666);
 	writeall(fd, msg, msglen, msgfile);
 	close(fd);
+	/*
+	 * if encdata is not null, it is the original data read in.
+	 * msg points into encdata (don't free).
+	 * otherwise encdata was freed when it was base64 decoded into msg.
+	 * in this case, free msg.
+	 */
 	if (encdata)
 		xfree(encdata, encdatalen);
 	else
