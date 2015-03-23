@@ -45,7 +45,7 @@ doconfigure() {
 	fi
 
 	printf 'SOBJS:=${OBJS:o=so}\n'
-	printf 'OBJS=main.o ${OBJS}\n'
+	printf 'MOBJS:=main.o ${OBJS}\n'
 	printf 'LIBREOP=libreop.so.%s\n' `cat shlib_version`
 	printf '\n'
 	printf 'all: reop ${LIBREOP}\n'
@@ -58,14 +58,14 @@ doconfigure() {
 	printf '.c.so:\n'
 	printf '\t${CC} -fPIC ${CFLAGS} ${CPPFLAGS} -o $@ -c $<\n'
 	printf '\n'
-	printf 'reop: ${OBJS}\n'
-	printf '\t${CC} ${OBJS} -o reop ${LDFLAGS}\n'
+	printf 'reop: ${MOBJS}\n'
+	printf '\t${CC} ${MOBJS} -o reop ${LDFLAGS}\n'
 	printf '\n'
 	printf '${LIBREOP}: ${SOBJS}\n'
 	printf '\t${CC} -shared ${SOBJS} -o $@ ${LDFLAGS}\n'
 	printf '\n'
 	printf 'clean:\n'
-	printf '\trm -f ${OBJS} reop\n'
+	printf '\trm -f ${MOBJS} reop\n'
 	printf '\trm -f ${SOBJS} ${LIBREOP}\n'
 }
 
