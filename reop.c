@@ -458,6 +458,7 @@ gethomefile(const char *filename, char *buf, size_t buflen)
 	return 0;
 }
 
+
 /*
  * parse ident line, return pointer to next line
  */

@@ -16,6 +16,8 @@
 
 
 #include <sys/stat.h>
+#include <sys/socket.h>
+#include <sys/un.h>
 
 #include <netinet/in.h>
 #include <resolv.h>
@@ -48,6 +50,57 @@ usage(const char *error)
 	exit(1);
 }
 
+static void
+agentserver(const char *sockname, const char *seckeyfile)
+{
+	const struct reop_seckey *seckey = reop_getseckey(seckeyfile, NULL);
+	if (!seckey)
+		errx(1, "unable to open seckey");
+	const char *keydata = reop_encodeseckey(seckey, "");
+	if (!keydata)
+		errx(1, "unable to encode seckey");
+
+	struct sockaddr_un sa;
+	memset(&sa, 0, sizeof(sa));
+	if (strlcpy(sa.sun_path, sockname, sizeof(sa.sun_path)) >= sizeof(sa.sun_path))
+		errx(1, "agent path too long");
+	sa.sun_family = AF_UNIX;
+	umask(0077);
+	int s = socket(AF_UNIX, SOCK_STREAM, 0);
+	if (s == -1)
+		err(1, "socket");
+	if (bind(s, (struct sockaddr *)&sa, sizeof(sa)) == -1)
+		err(1, "bind");
+	if (listen(s, 5) == -1)
+		err(1, "listen");
+	while (1) {
+		int fd = accept(s, NULL, NULL);
+		if (fd == -1)
+			err(1, "accept");
+		char cmd[1024];
+		int rv = read(fd, cmd, sizeof(cmd) - 1);
+		if (rv == -1)
+			err(1, "read");
+		if (rv == 0) {
+			close(fd);
+			continue;
+		}
+		cmd[rv] = '\0';
+		if (strncmp(cmd, "QUIT", 4) == 0) {
+			close(fd);
+			break;
+		}
+		if (strncmp(cmd, "KEY", 3) == 0) {
+			write(fd, keydata, strlen(keydata));
+		}
+		close(fd);
+	}
+	reop_freestr(keydata);
+	reop_freeseckey(seckey);
+	close(s);
+	unlink(sockname);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -60,17 +113,19 @@ main(int argc, char **argv)
 	int quiet = 0;
 	int v1compat = 0;
 	const char *password = NULL;
+	const char *sockname = NULL;
 	opt_binary binary = { 0 };
 	enum {
 		NONE,
+		AGENT,
 		DECRYPT,
 		ENCRYPT,
 		GENERATE,
 		SIGN,
-		VERIFY
+		VERIFY,
 	} verb = NONE;
 
-	while ((ch = getopt(argc, argv, "1CDEGSVbei:m:np:qs:x:")) != -1) {
+	while ((ch = getopt(argc, argv, "1CDEGSVZbei:m:np:qs:x:z:")) != -1) {
 		switch (ch) {
 		case '1':
 			v1compat = 1;
@@ -100,6 +155,11 @@ main(int argc, char **argv)
 				usage(NULL);
 			verb = VERIFY;
 			break;
+		case 'Z':
+			if (verb)
+				usage(NULL);
+			verb = AGENT;
+			break;
 		case 'b':
 			binary.v = 1;
 			break;
@@ -127,6 +187,9 @@ main(int argc, char **argv)
 		case 'x':
 			xfile = optarg;
 			break;
+		case 'z':
+			sockname = optarg;
+			break;
 		default:
 			usage(NULL);
 			break;
@@ -141,6 +204,10 @@ main(int argc, char **argv)
 	reop_init();
 
 	switch (verb) {
+	case AGENT:
+		if (!sockname)
+			usage("You must specify an agent socket");
+		break;
 	case ENCRYPT:
 	case DECRYPT:
 		if (!msgfile)
@@ -170,6 +237,9 @@ main(int argc, char **argv)
 	}
 
 	switch (verb) {
+	case AGENT:
+		agentserver(sockname, seckeyfile);
+		break;
 	case DECRYPT:
 		decrypt(pubkeyfile, seckeyfile, msgfile, xfile);
 		break;
