@@ -887,20 +887,21 @@ reop_pubdecrypt(const struct reop_encmsg *encmsg, const struct reop_pubkey *pubk
 		return (reop_decrypt_result) { REOP_D_MISMATCH };
 
 	if (memcmp(pubkey->encalg, ENCKEYALG, 2) != 0)
-		errx(1, "unsupported key format");
+		return (reop_decrypt_result) { REOP_D_INVALID };
 	if (memcmp(seckey->encalg, ENCKEYALG, 2) != 0)
-		errx(1, "unsupported key format");
+		return (reop_decrypt_result) { REOP_D_INVALID };
 
 	uint8_t ephpubkey[ENCPUBLICBYTES];
 	memcpy(ephpubkey, encmsg->ephpubkey, sizeof(encmsg->ephpubkey));
 	int rv = pubdecryptraw(ephpubkey, sizeof(ephpubkey),
 	    encmsg->ephnonce, encmsg->ephtag, pubkey->enckey, seckey->enckey);
 	if (rv != 0)
-		errx(1, "pub decryption failed");
+		return (reop_decrypt_result) { REOP_D_FAIL };
+
 	rv = pubdecryptraw(msg, msglen, encmsg->nonce, encmsg->tag,
 	    ephpubkey, seckey->enckey);
 	if (rv != 0)
-		errx(1, "pub decryption failed");
+		return (reop_decrypt_result) { REOP_D_FAIL };
 
 	sodium_memzero(ephpubkey, sizeof(ephpubkey));
 
@@ -911,16 +912,19 @@ reop_decrypt_result
 reop_symdecrypt(const struct reop_symmsg *symmsg, const char *password, uint8_t *msg,
     uint64_t msglen)
 {
-	kdf_confirm confirm = { 0 };
 	if (memcmp(symmsg->kdfalg, KDFALG, 2) != 0)
-		errx(1, "unsupported KDF");
+		return (reop_decrypt_result) { REOP_D_INVALID };
+
+	kdf_confirm confirm = { 0 };
 	int rounds = ntohl(symmsg->kdfrounds);
 	uint8_t symkey[SYMKEYBYTES];
 	kdf(symmsg->salt, sizeof(symmsg->salt), rounds, NULL,
 	    confirm, symkey, sizeof(symkey));
+
 	int rv = symdecryptraw(msg, msglen, symmsg->nonce, symmsg->tag, symkey);
 	if (rv != 0)
-		errx(1, "sym decryption failed");
+		return (reop_decrypt_result) { REOP_D_FAIL };
+
 	sodium_memzero(symkey, sizeof(symkey));
 
 	return (reop_decrypt_result) { 0 };
@@ -1486,8 +1490,19 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 			goto fail;
 
 		reop_decrypt_result rv = reop_symdecrypt(&hdr.symmsg, NULL, msg, msglen);
-		if (rv.v != REOP_D_OK)
-			errx(1, "fail decrypt");
+		switch (rv.v) {
+		case REOP_D_OK:
+			break;
+		case REOP_D_FAIL:
+			errx(1, "sym decryption failed");
+			break;
+		case REOP_D_INVALID:
+			errx(1, "unsupported key format");
+			break;
+		default:
+			errx(1, "sym decryption failed");
+			break;
+		}
 
 	} else if (memcmp(hdr.alg, ENCALG, 2) == 0) {
 		if (hdrsize != encmsgsize)
@@ -1500,8 +1515,22 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 			errx(1, "no seckey");
 
 		reop_decrypt_result rv = reop_pubdecrypt(&hdr.encmsg, pubkey, seckey, msg, msglen);
-		if (rv.v != REOP_D_OK)
-			errx(1, "fail decrypt");
+		switch (rv.v) {
+		case REOP_D_OK:
+			break;
+		case REOP_D_FAIL:
+			errx(1, "pub decryption failed");
+			break;
+		case REOP_D_MISMATCH:
+			errx(1, "key mismatch");
+			break;
+		case REOP_D_INVALID:
+			errx(1, "unsupported key format");
+			break;
+		default:
+			errx(1, "pub decryption failed");
+			break;
+		}
 
 		reop_freeseckey(seckey);
 		reop_freepubkey(pubkey);

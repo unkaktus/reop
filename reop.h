@@ -36,6 +36,7 @@ enum reop_decrypt_code {
 	REOP_D_OK = 0,
 	REOP_D_FAIL,
 	REOP_D_MISMATCH,
+	REOP_D_INVALID,
 };
 typedef struct { enum reop_decrypt_code v; } reop_decrypt_result;
 
