@@ -68,26 +68,6 @@
 
 /* metadata */
 /* these types are holdovers from before */
-struct symmsg {
-	uint8_t symalg[2];
-	uint8_t kdfalg[2];
-	uint32_t kdfrounds;
-	uint8_t salt[16];
-	uint8_t nonce[SYMNONCEBYTES];
-	uint8_t tag[SYMTAGBYTES];
-};
-
-struct encmsg {
-	uint8_t encalg[2];
-	uint8_t secrandomid[RANDOMIDLEN];
-	uint8_t pubrandomid[RANDOMIDLEN];
-	uint8_t ephpubkey[ENCPUBLICBYTES];
-	uint8_t ephnonce[ENCNONCEBYTES];
-	uint8_t ephtag[ENCTAGBYTES];
-	uint8_t nonce[ENCNONCEBYTES];
-	uint8_t tag[ENCTAGBYTES];
-};
-
 struct oldencmsg {
 	uint8_t encalg[2];
 	uint8_t secrandomid[RANDOMIDLEN];
@@ -142,6 +122,30 @@ struct reop_pubkey {
 	char ident[IDENTLEN];
 };
 const size_t pubkeysize = offsetof(struct reop_pubkey, ident);
+
+struct reop_symmsg {
+	uint8_t symalg[2];
+	uint8_t kdfalg[2];
+	uint32_t kdfrounds;
+	uint8_t salt[16];
+	uint8_t nonce[SYMNONCEBYTES];
+	uint8_t tag[SYMTAGBYTES];
+};
+const size_t symmsgsize = sizeof(struct reop_symmsg);
+
+struct reop_encmsg {
+	uint8_t encalg[2];
+	uint8_t secrandomid[RANDOMIDLEN];
+	uint8_t pubrandomid[RANDOMIDLEN];
+	uint8_t ephpubkey[ENCPUBLICBYTES];
+	uint8_t ephnonce[ENCNONCEBYTES];
+	uint8_t ephtag[ENCTAGBYTES];
+	uint8_t nonce[ENCNONCEBYTES];
+	uint8_t tag[ENCTAGBYTES];
+	char ident[IDENTLEN];
+};
+const size_t encmsgsize = offsetof(struct reop_encmsg, ident);
+
 
 /* utility */
 static int
@@ -844,6 +848,77 @@ reop_verify(const struct reop_pubkey *pubkey, const uint8_t *msg, uint64_t msgle
 	return (reop_verify_result) { REOP_V_OK };
 }
 
+/*
+ * encrypt a file using public key cryptography
+ * an ephemeral key is used to make the encryption one way
+ * that key is then encrypted with our seckey to provide authentication
+ */
+const struct reop_encmsg *
+reop_pubencrypt(const struct reop_pubkey *pubkey, const struct reop_seckey *seckey,
+    uint8_t *msg, uint64_t msglen)
+{
+	struct reop_encmsg *encmsg = malloc(sizeof(*encmsg));
+	if (!encmsg)
+		return NULL;
+
+	memcpy(encmsg->encalg, ENCALG, 2);
+	memcpy(encmsg->pubrandomid, pubkey->randomid, RANDOMIDLEN);
+	memcpy(encmsg->secrandomid, seckey->randomid, RANDOMIDLEN);
+
+	uint8_t ephseckey[ENCSECRETBYTES];
+	crypto_box_keypair(encmsg->ephpubkey, ephseckey);
+	strlcpy(encmsg->ident, seckey->ident, sizeof(encmsg->ident));
+
+	pubencryptraw(msg, msglen, encmsg->nonce, encmsg->tag, pubkey->enckey, ephseckey);
+	pubencryptraw(encmsg->ephpubkey, sizeof(encmsg->ephpubkey), encmsg->ephnonce,
+	    encmsg->ephtag, pubkey->enckey, seckey->enckey);
+
+	sodium_memzero(&ephseckey, sizeof(ephseckey));
+
+	return encmsg;
+}
+
+void
+reop_freeencmsg(const struct reop_encmsg *encmsg)
+{
+	xfree((void *)encmsg, sizeof(*encmsg));
+}
+
+/*
+ * encrypt a message using symmetric cryptography (a password)
+ */
+const struct reop_symmsg *
+reop_symencrypt(uint8_t *msg, uint64_t msglen, const char *password)
+{
+	struct reop_symmsg *symmsg = malloc(sizeof(*symmsg));
+	if (!symmsg)
+		return NULL;
+
+	int rounds = 42;
+
+	memcpy(symmsg->symalg, SYMALG, 2);
+	memcpy(symmsg->kdfalg, KDFALG, 2);
+	symmsg->kdfrounds = htonl(rounds);
+	randombytes(symmsg->salt, sizeof(symmsg->salt));
+
+	uint8_t symkey[SYMKEYBYTES];
+	kdf_confirm confirm = { 1 };
+	kdf(symmsg->salt, sizeof(symmsg->salt), rounds, password,
+	    confirm, symkey, sizeof(symkey));
+
+	symencryptraw(msg, msglen, symmsg->nonce, symmsg->tag, symkey);
+
+	sodium_memzero(symkey, sizeof(symkey));
+
+	return symmsg;
+}
+
+void
+reop_freesymmsg(const struct reop_symmsg *symmsg)
+{
+	xfree((void *)symmsg, sizeof(*symmsg));
+}
+
 void
 reop_init(void)
 {
@@ -1177,9 +1252,6 @@ static void
 pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
     const char *msgfile, const char *encfile, opt_binary binary)
 {
-	struct encmsg encmsg;
-	uint8_t ephseckey[ENCSECRETBYTES];
-
 	uint64_t msglen;
 	uint8_t *msg;
 	readallorfail(msgfile, &msg, &msglen);
@@ -1195,20 +1267,14 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 		errx(1, "unsupported key format");
 	if (memcmp(seckey->encalg, ENCKEYALG, 2) != 0)
 		errx(1, "unsupported key format");
-	memcpy(encmsg.encalg, ENCALG, 2);
-	memcpy(encmsg.pubrandomid, pubkey->randomid, RANDOMIDLEN);
-	memcpy(encmsg.secrandomid, seckey->randomid, RANDOMIDLEN);
-	crypto_box_keypair(encmsg.ephpubkey, ephseckey);
 
-	pubencryptraw(msg, msglen, encmsg.nonce, encmsg.tag, pubkey->enckey, ephseckey);
-	pubencryptraw(encmsg.ephpubkey, sizeof(encmsg.ephpubkey), encmsg.ephnonce,
-	    encmsg.ephtag, pubkey->enckey, seckey->enckey);
-
-	writeencfile(encfile, &encmsg, sizeof(encmsg), seckey->ident, msg, msglen, binary);
-
+	const struct reop_encmsg *encmsg = reop_pubencrypt(pubkey, seckey, msg, msglen);
 	reop_freeseckey(seckey);
 	reop_freepubkey(pubkey);
-	sodium_memzero(&ephseckey, sizeof(ephseckey));
+
+	writeencfile(encfile, encmsg, encmsgsize, encmsg->ident, msg, msglen, binary);
+
+	reop_freeencmsg(encmsg);
 
 	xfree(msg, msglen);
 }
@@ -1252,33 +1318,20 @@ v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 	xfree(msg, msglen);
 }
 
-/*
- * encrypt a file using symmetric cryptography (a password)
- */
 static void
 symencrypt(const char *msgfile, const char *encfile, opt_binary binary)
 {
-	struct symmsg symmsg;
-	uint8_t symkey[SYMKEYBYTES];
-	kdf_confirm confirm = { 1 };
-
 	uint64_t msglen;
 	uint8_t *msg;
 	readallorfail(msgfile, &msg, &msglen);
 
-	int rounds = 42;
+	const struct reop_symmsg *symmsg = reop_symencrypt(msg, msglen, NULL);
+	if (!symmsg)
+		errx(1, "encrypt failed");
 
-	memcpy(symmsg.kdfalg, KDFALG, 2);
-	memcpy(symmsg.symalg, SYMALG, 2);
-	symmsg.kdfrounds = htonl(rounds);
-	randombytes(symmsg.salt, sizeof(symmsg.salt));
-	kdf(symmsg.salt, sizeof(symmsg.salt), rounds, NULL,
-	    confirm, symkey, sizeof(symkey));
+	writeencfile(encfile, symmsg, symmsgsize, "<symmetric>", msg, msglen, binary);
 
-	symencryptraw(msg, msglen, symmsg.nonce, symmsg.tag, symkey);
-	sodium_memzero(symkey, sizeof(symkey));
-
-	writeencfile(encfile, &symmsg, sizeof(symmsg), "<symmetric>", msg, msglen, binary);
+	reop_freesymmsg(symmsg);
 
 	xfree(msg, msglen);
 }
@@ -1295,8 +1348,8 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 	uint64_t msglen;
 	union {
 		uint8_t alg[2];
-		struct symmsg symmsg;
-		struct encmsg encmsg;
+		struct reop_symmsg symmsg;
+		struct reop_encmsg encmsg;
 		struct oldencmsg oldencmsg;
 		struct oldekcmsg oldekcmsg;
 	} hdr;
@@ -1313,13 +1366,13 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 		uint32_t identlen;
 
 		if (memcmp(ptr, SYMALG, 2) == 0) {
-			hdrsize = sizeof(hdr.symmsg);
+			hdrsize = symmsgsize;
 			if (ptr + hdrsize > endptr)
 				goto fail;
 			memcpy(&hdr.symmsg, ptr, hdrsize);
 			ptr += hdrsize;
 		} else if (memcmp(ptr, ENCALG, 2) == 0) {
-			hdrsize = sizeof(hdr.encmsg);
+			hdrsize = encmsgsize;
 			if (ptr + hdrsize > endptr)
 				goto fail;
 			memcpy(&hdr.encmsg, ptr, hdrsize);
@@ -1383,7 +1436,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 
 	if (memcmp(hdr.alg, SYMALG, 2) == 0) {
 		kdf_confirm confirm = { 0 };
-		if (hdrsize != sizeof(hdr.symmsg))
+		if (hdrsize != symmsgsize)
  			goto fail;
 		if (memcmp(hdr.symmsg.kdfalg, KDFALG, 2) != 0)
 			errx(1, "unsupported KDF");
@@ -1395,7 +1448,7 @@ decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
 			errx(1, "sym decryption failed");
 		sodium_memzero(symkey, sizeof(symkey));
 	} else if (memcmp(hdr.alg, ENCALG, 2) == 0) {
-		if (hdrsize != sizeof(hdr.encmsg))
+		if (hdrsize != encmsgsize)
 			goto fail;
 		const struct reop_pubkey *pubkey = reop_getpubkey(pubkeyfile, ident);
 		if (!pubkey)
