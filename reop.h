@@ -32,6 +32,12 @@ enum reop_verify_code {
 	REOP_V_MISMATCH,
 };
 typedef struct { enum reop_verify_code v; } reop_verify_result;
+enum reop_decrypt_code {
+	REOP_D_OK = 0,
+	REOP_D_FAIL,
+	REOP_D_MISMATCH,
+};
+typedef struct { enum reop_decrypt_code v; } reop_decrypt_result;
 
 
 /* generic */
