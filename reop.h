@@ -63,25 +63,3 @@ const char *reop_encodesig(const struct reop_sig *sig);
 void reop_freesig(const struct reop_sig *sig);
 
 void reop_freestr(const char *str);
-
-/* application code; yet to be converted */
-struct pubkey;
-struct symmsg;
-struct encmsg;
-
-void verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
-    int quiet);
-void verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet);
-
-void pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
-    const char *msgfile, const char *encfile, opt_binary binary);
-void v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
-    const char *msgfile, const char *encfile, opt_binary binary);
-void symencrypt(const char *msgfile, const char *encfile, opt_binary binary);
-void decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
-    const char *encfile);
-void generate(const char *pubkeyfile, const char *seckeyfile, const char *ident,
-    const char *password);
-
-void signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
-    int embedded);

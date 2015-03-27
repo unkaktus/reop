@@ -169,30 +169,6 @@ xopen(const char *filename, int oflags, mode_t mode)
 	return fd;
 }
 
-static int
-xopenorfail(const char *filename, int oflags, mode_t mode)
-{
-	int fd = xopen(filename, oflags, mode);
-	if (fd >= 0)
-		return fd;
-	switch (fd) {
-	case -1:
-		err(1, "can't open %s for %s", filename,
-		    (oflags & O_WRONLY) ? "writing" : "reading");
-		break;
-	case -2:
-		err(1, "dup failed");
-		break;
-	case -3:
-		errx(1, "not a valid file: %s", filename);
-		break;
-	default:
-		errx(1, "can't open %s", filename);
-		break;
-	}
-	return -1;
-}
-
 static void *
 xmalloc(size_t len)
 {
@@ -307,7 +283,7 @@ verifyraw(const uint8_t *pubkey, const uint8_t *buf, uint64_t buflen,
 }
 
 /* file utilities */
-int
+static int
 readall(const char *filename, uint8_t **msgp, uint64_t *msglenp)
 {
 	struct stat sb;
@@ -370,55 +346,6 @@ fail:
 	close(fd);
 	free(msg);
 	return rv;
-}
-
-static void
-readallorfail(const char *filename, uint8_t **msgp, uint64_t *msglenp)
-{
-	int rv = readall(filename, msgp, msglenp);
-	switch (rv) {
-	case 0:
-		break;
-	case -1:
-		err(1, "could not open %s", filename);
-		break;
-	case -2:
-		errx(1, "%s is too large", filename);
-		break;
-	default:
-		errx(1, "could not read %s", filename);
-		break;
-	}
-}
-
-static void
-writeall(int fd, const void *buf, size_t buflen, const char *filename)
-{
-	while (buflen != 0) {
-		ssize_t x = write(fd, buf, buflen);
-		if (x == -1)
-			err(1, "write to %s", filename);
-		buflen -= x;
-		buf = (char *)buf + x;
-	}
-}
-
-/*
- * can really write any kind of data, but we're usually interested in line
- * wrapping for base64 encoded blocks
- */
-static void
-writeb64data(int fd, const char *filename, char *b64)
-{
-	size_t rem = strlen(b64);
-	size_t pos = 0;
-	while (rem > 0) {
-		size_t amt = rem > 76 ? 76 : rem;
-		writeall(fd, b64 + pos, amt, filename);
-		writeall(fd, "\n", 1, filename);
-		pos += amt;
-		rem -= amt;
-	}
 }
 
 /*
@@ -560,7 +487,7 @@ kdf(uint8_t *salt, size_t saltlen, int rounds, const char *password,
  * are still encrypted with a null key.
  * these functions will prompt for password if none is provided.
  */
-void
+static void
 encryptseckey(struct reop_seckey *seckey, const char *password)
 {
 	uint8_t symkey[SYMKEYBYTES];
@@ -580,7 +507,7 @@ encryptseckey(struct reop_seckey *seckey, const char *password)
 	sodium_memzero(symkey, sizeof(symkey));
 }
 
-int
+static int
 decryptseckey(struct reop_seckey *seckey, const char *password)
 {
 	if (memcmp(seckey->kdfalg, KDFALG, 2) != 0)
@@ -855,7 +782,150 @@ reop_encodeseckey(const struct reop_seckey *seckey, const char *password)
 	return rv;
 }
 
+/*
+ * basic sign function
+ */
+const struct reop_sig *
+reop_sign(const struct reop_seckey *seckey, const uint8_t *msg, uint64_t msglen)
+{
+	struct reop_sig *sig = xmalloc(sizeof(*sig));
+
+	signraw(seckey->sigkey, msg, msglen, sig->sig);
+
+	memcpy(sig->randomid, seckey->randomid, RANDOMIDLEN);
+	memcpy(sig->sigalg, SIGALG, 2);
+	strlcpy(sig->ident, seckey->ident, sizeof(sig->ident));
+
+	return sig;
+}
+
+/*
+ * free sig
+ */
 void
+reop_freesig(const struct reop_sig *sig)
+{
+	xfree((void *)sig, sizeof(*sig));
+}
+
+/*
+ * parse signature data into struct
+ */
+const struct reop_sig *
+reop_parsesig(const char *sigdata)
+{
+	struct reop_sig *sig = xmalloc(sizeof(*sig));
+	parsekeydata(sigdata, "SIGNATURE", sig, sigsize, sig->ident);
+	return sig;
+}
+
+/*
+ * encode a signature to a string
+ */
+const char *
+reop_encodesig(const struct reop_sig *sig)
+{
+	return encodekey("SIGNATURE", sig, sigsize, sig->ident);
+}
+
+/*
+ * basic verify function
+ */
+reop_verify_result
+reop_verify(const struct reop_pubkey *pubkey, const uint8_t *msg, uint64_t msglen,
+    const struct reop_sig *sig)
+{
+	if (memcmp(pubkey->randomid, sig->randomid, RANDOMIDLEN) != 0)
+		return (reop_verify_result) { REOP_V_MISMATCH };
+
+	if (verifyraw(pubkey->sigkey, msg, msglen, sig->sig) == -1)
+		return (reop_verify_result) { REOP_V_FAIL };
+
+	return (reop_verify_result) { REOP_V_OK };
+}
+
+void
+reop_init(void)
+{
+	sodium_init();
+}
+
+#ifdef REOPMAIN
+
+static int
+xopenorfail(const char *filename, int oflags, mode_t mode)
+{
+	int fd = xopen(filename, oflags, mode);
+	if (fd >= 0)
+		return fd;
+	switch (fd) {
+	case -1:
+		err(1, "can't open %s for %s", filename,
+		    (oflags & O_WRONLY) ? "writing" : "reading");
+		break;
+	case -2:
+		err(1, "dup failed");
+		break;
+	case -3:
+		errx(1, "not a valid file: %s", filename);
+		break;
+	default:
+		errx(1, "can't open %s", filename);
+		break;
+	}
+	return -1;
+}
+
+static void
+readallorfail(const char *filename, uint8_t **msgp, uint64_t *msglenp)
+{
+	int rv = readall(filename, msgp, msglenp);
+	switch (rv) {
+	case 0:
+		break;
+	case -1:
+		err(1, "could not open %s", filename);
+		break;
+	case -2:
+		errx(1, "%s is too large", filename);
+		break;
+	default:
+		errx(1, "could not read %s", filename);
+		break;
+	}
+}
+
+static void
+writeall(int fd, const void *buf, size_t buflen, const char *filename)
+{
+	while (buflen != 0) {
+		ssize_t x = write(fd, buf, buflen);
+		if (x == -1)
+			err(1, "write to %s", filename);
+		buflen -= x;
+		buf = (char *)buf + x;
+	}
+}
+
+/*
+ * can really write any kind of data, but we're usually interested in line
+ * wrapping for base64 encoded blocks
+ */
+static void
+writeb64data(int fd, const char *filename, char *b64)
+{
+	size_t rem = strlen(b64);
+	size_t pos = 0;
+	while (rem > 0) {
+		size_t amt = rem > 76 ? 76 : rem;
+		writeall(fd, b64 + pos, amt, filename);
+		writeall(fd, "\n", 1, filename);
+		pos += amt;
+		rem -= amt;
+	}
+}
+
+static void
 generate(const char *pubkeyfile, const char *seckeyfile, const char *ident,
     const char *password)
 {
@@ -918,71 +988,9 @@ writesignedmsg(const char *filename, const struct reop_sig *sig,
 }
 
 /*
- * basic sign function
- */
-const struct reop_sig *
-reop_sign(const struct reop_seckey *seckey, const uint8_t *msg, uint64_t msglen)
-{
-	struct reop_sig *sig = xmalloc(sizeof(*sig));
-
-	signraw(seckey->sigkey, msg, msglen, sig->sig);
-
-	memcpy(sig->randomid, seckey->randomid, RANDOMIDLEN);
-	memcpy(sig->sigalg, SIGALG, 2);
-	strlcpy(sig->ident, seckey->ident, sizeof(sig->ident));
-
-	return sig;
-}
-
-/*
- * free sig
- */
-void
-reop_freesig(const struct reop_sig *sig)
-{
-	xfree((void *)sig, sizeof(*sig));
-}
-
-/*
- * parse signature data into struct
- */
-const struct reop_sig *
-reop_parsesig(const char *sigdata)
-{
-	struct reop_sig *sig = xmalloc(sizeof(*sig));
-	parsekeydata(sigdata, "SIGNATURE", sig, sigsize, sig->ident);
-	return sig;
-}
-
-/*
- * encode a signature to a string
- */
-const char *
-reop_encodesig(const struct reop_sig *sig)
-{
-	return encodekey("SIGNATURE", sig, sigsize, sig->ident);
-}
-
-/*
- * read signature file
- */
-static const struct reop_sig *
-readsigfile(const char *sigfile)
-{
-	uint64_t sigdatalen;
-	uint8_t *sigdata;
-	readall(sigfile, &sigdata, &sigdatalen);
-	if (!sigdata)
-		errx(1, "could not read %s", sigfile);
-	const struct reop_sig *sig = reop_parsesig(sigdata);
-	xfree(sigdata, sigdatalen);
-	return sig;
-}
-
-/*
  * sign a file
  */
-void
+static void
 signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
     int embedded)
 {
@@ -1013,25 +1021,25 @@ signfile(const char *seckeyfile, const char *msgfile, const char *sigfile,
 }
 
 /*
- * basic verify function
+ * read signature file
  */
-reop_verify_result
-reop_verify(const struct reop_pubkey *pubkey, const uint8_t *msg, uint64_t msglen,
-    const struct reop_sig *sig)
+static const struct reop_sig *
+readsigfile(const char *sigfile)
 {
-	if (memcmp(pubkey->randomid, sig->randomid, RANDOMIDLEN) != 0)
-		return (reop_verify_result) { REOP_V_MISMATCH };
-
-	if (verifyraw(pubkey->sigkey, msg, msglen, sig->sig) == -1)
-		return (reop_verify_result) { REOP_V_FAIL };
-
-	return (reop_verify_result) { REOP_V_OK };
+	uint64_t sigdatalen;
+	uint8_t *sigdata;
+	readall(sigfile, &sigdata, &sigdatalen);
+	if (!sigdata)
+		errx(1, "could not read %s", sigfile);
+	const struct reop_sig *sig = reop_parsesig(sigdata);
+	xfree(sigdata, sigdatalen);
+	return sig;
 }
 
 /*
  * simple case, detached signature
  */
-void
+static void
 verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
     int quiet)
 {
@@ -1064,7 +1072,7 @@ verifysimple(const char *pubkeyfile, const char *msgfile, const char *sigfile,
 /*
  * message followed by signature in one file
  */
-void
+static void
 verifyembedded(const char *pubkeyfile, const char *sigfile, int quiet)
 {
 	const char *beginmsg = "-----BEGIN REOP SIGNED MESSAGE-----\n";
@@ -1165,7 +1173,7 @@ writeencfile(const char *filename, const void *hdr,
  * an ephemeral key is used to make the encryption one way
  * that key is then encrypted with our seckey to provide authentication
  */
-void
+static void
 pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
     const char *msgfile, const char *encfile, opt_binary binary)
 {
@@ -1209,7 +1217,7 @@ pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
  * encrypt a file using public key cryptography
  * old version 1.0 variant
  */
-void
+static void
 v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
     const char *msgfile, const char *encfile, opt_binary binary)
 {
@@ -1247,7 +1255,7 @@ v1pubencrypt(const char *pubkeyfile, const char *ident, const char *seckeyfile,
 /*
  * encrypt a file using symmetric cryptography (a password)
  */
-void
+static void
 symencrypt(const char *msgfile, const char *encfile, opt_binary binary)
 {
 	struct symmsg symmsg;
@@ -1278,7 +1286,7 @@ symencrypt(const char *msgfile, const char *encfile, opt_binary binary)
 /*
  * decrypt a file, either public key or symmetric based on header
  */
-void
+static void
 decrypt(const char *pubkeyfile, const char *seckeyfile, const char *msgfile,
     const char *encfile)
 {
@@ -1477,14 +1485,6 @@ fail:
 fpfail:
 	errx(1, "key mismatch");
 }
-
-void
-reop_init(void)
-{
-	sodium_init();
-}
-
-#ifdef REOPMAIN
 
 static void
 usage(const char *error)
