@@ -1616,6 +1616,7 @@ usage(const char *error)
 	exit(1);
 }
 
+#if 0
 static void
 agentserver(const char *sockname, const char *seckeyfile)
 {
@@ -1666,6 +1667,7 @@ agentserver(const char *sockname, const char *seckeyfile)
 	close(s);
 	unlink(sockname);
 }
+#endif
 
 int
 main(int argc, char **argv)
@@ -1803,9 +1805,11 @@ main(int argc, char **argv)
 	}
 
 	switch (verb) {
+#if 0
 	case AGENT:
 		agentserver(sockname, seckeyfile);
 		break;
+#endif
 	case DECRYPT:
 		decrypt(pubkeyfile, seckeyfile, msgfile, xfile);
 		break;
