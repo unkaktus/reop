@@ -23,13 +23,12 @@ doconfigure() {
 	if has features.h _FILE_OFFSET_BITS ; then
 		printf 'CPPFLAGS+=-D_FILE_OFFSET_BITS=64\n'
 	fi
-	if ! has string.h strlcpy ; then
-		printf 'OBJS+=other/strlcpy.o\n'
+	if [ `uname` = "Darwin" ] ; then
+		: # always has strlcpy; sometimes hard to find
+	elif ! has string.h strlcpy ; then
 		printf 'CPPFLAGS+=-DNEED_STRLCPY\n'
-	fi
-	if ! has string.h strlcat ; then
+		printf 'OBJS+=other/strlcpy.o\n'
 		printf 'OBJS+=other/strlcat.o\n'
-		printf 'CPPFLAGS+=-DNEED_STRLCAT\n'
 	fi
 	if ! has readpassphrase.h readpassphrase ; then
 		printf 'OBJS+=other/readpassphrase.o\n'
