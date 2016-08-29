@@ -28,7 +28,7 @@ import (
 	"strings"
 
 	"github.com/dchest/bcrypt_pbkdf"
-	"github.com/howeyc/gopass"
+	"golang.org/x/crypto/ssh/terminal"
 	"golang.org/x/crypto/nacl/box"
 	"golang.org/x/crypto/nacl/secretbox"
 )
@@ -276,12 +276,13 @@ func decryptMsg(seckeyfile, pubkeyfile string, ciphertext []byte) string {
 			fmt.Fprintln(os.Stderr, "unsupported KDF")
 			os.Exit(1)
 		}
-		password := os.Getenv("REOP_PASSPHRASE")
-		if password == "" {
-			fmt.Print("passphrase: ")
-			password = string(gopass.GetPasswd())
+		fmt.Print("passphrase: ")
+		password, err := terminal.ReadPassword(0)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Unable to read password: %v", err)
+			os.Exit(1)
 		}
-		key, _ := bcrypt_pbkdf.Key([]byte(password), msg.salt[:], int(msg.kdfrounds), 32)
+		key, _ := bcrypt_pbkdf.Key(password, msg.salt[:], int(msg.kdfrounds), 32)
 		var symkey [32]byte
 		copy(symkey[:], key)
 		raw := append(msg.tag[:], msgraw...)
@@ -506,16 +507,21 @@ func main() {
 			s := encryptMsg(seckey, pubkey, msg)
 			ioutil.WriteFile(*xfile, []byte(s), os.FileMode(0611))
 		} else {
-			password := os.Getenv("REOP_PASSPHRASE")
-			if password == "" {
-				fmt.Print("passphrase: ")
-				password = string(gopass.GetPasswd())
-				fmt.Print("confirm passphrase: ")
-				confirmed := string(gopass.GetPasswd())
-				if password != confirmed {
-					fmt.Fprintf(os.Stderr, "Passphrases didn't match!\n")
-					os.Exit(1)
-				}
+			fmt.Print("passphrase: ")
+			password, err := terminal.ReadPassword(0)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "Unable to read passphrase: %v", err)
+				os.Exit(1)
+			}
+			fmt.Print("confirm passphrase: ")
+			confirmed, err := terminal.ReadPassword(0)
+			if err != nil {
+				fmt.Fprintln(os.Stderr, "Unable to read passphrase: %v", err)
+				os.Exit(1)
+			}
+			if !bytes.Equal(password, confirmed) {
+				fmt.Fprintf(os.Stderr, "Passphrases didn't match!\n")
+				os.Exit(1)
 			}
 			msg, err := ioutil.ReadFile(*msgfile)
 			if err != nil {
